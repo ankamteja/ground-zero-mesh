@@ -38,6 +38,12 @@
   button.toggle:hover { border-color: var(--accent); color: var(--accent); }
   button:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
 
+  .preview-banner {
+    padding: 9px 16px; font-size: 12px; line-height: 1.5; color: var(--text);
+    background: color-mix(in srgb, var(--entrap) 16%, var(--panel)); border-bottom: 1px solid var(--line);
+  }
+  .preview-banner em { font-style: normal; color: var(--entrap); font-weight: 600; }
+
   main {
     display: grid; grid-template-columns: minmax(0, 1fr) 380px;
     height: calc(100vh - 66px); min-height: 480px;
@@ -52,7 +58,12 @@
     background: color-mix(in srgb, var(--bg) 82%, transparent); padding: 5px 8px; border: 1px solid var(--line);
   }
   .hint { left: 12px; bottom: 12px; }
-  .caveat-chip { right: 12px; top: 12px; max-width: 260px; text-align: right; }
+  .caveat-chip { right: 12px; top: 12px; max-width: 280px; text-align: right; }
+  .legend { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; align-items: flex-end; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .swatch { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .swatch.node { background: var(--drown); }
+  .swatch.relay { border: 1px solid var(--dim); background: transparent; }
 
   aside { padding: 14px 16px 40px; overflow-y: auto; height: 100%; }
   section { margin-bottom: 20px; }
@@ -139,11 +150,23 @@
   <button class="toggle" id="themeBtn">light</button>
 </header>
 
+<div id="previewBanner" class="preview-banner" role="status" hidden>
+  <strong>Sample data</strong> — no gateway phone is connected, so this is what the board looks
+  like with example incidents. Join the gateway's Wi-Fi hotspot to see live reports; actions
+  like <em>found / safe</em> are turned off until then.
+</div>
+
 <main>
   <div id="stage">
     <canvas id="view" aria-hidden="true"></canvas>
     <div class="hint">drag orbit &middot; shift-drag pan &middot; wheel zoom &middot; tap a marker</div>
-    <div class="caveat-chip">positions are schematic — from the zone tag alone, never measured</div>
+    <div class="caveat-chip">
+      positions are schematic — from the zone tag alone, never measured
+      <div class="legend">
+        <span><i class="swatch node"></i> incident &middot; colour = severity</span>
+        <span><i class="swatch relay"></i> relay &middot; carried a report, position unknown</span>
+      </div>
+    </div>
   </div>
 
   <aside>
@@ -250,7 +273,7 @@
         .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
         .then(function (t) { setConn("live", "live (poll)"); ingest(t); })
         .catch(function () {
-          if (usingFixtures) { setConn("", "preview (fixtures.json) — retrying gateway"); return; }
+          if (usingFixtures) { setConn("", "sample data — retrying gateway"); return; }
           setConn("down", "no gateway connection");
           if (Date.now() - lastGood > 8000) tryFixtures();
         });
@@ -264,7 +287,7 @@
       .then(function (r) { return r.json(); })
       .then(function (j) {
         usingFixtures = true;
-        setConn("", "preview (fixtures.json)");
+        setConn("", "sample data — no gateway connected");
         render(j);
       })
       .catch(function () {});
@@ -290,6 +313,7 @@
 
     $("advice").textContent = payload.advice || "—";
     $("updated").textContent = "updated " + new Date().toLocaleTimeString();
+    $("previewBanner").hidden = !usingFixtures;
 
     renderPerimeter();
     renderBoard();
@@ -393,10 +417,14 @@
       '<h2 style="margin-top:14px">Why it ranks here</h2>' +
       '<ul class="reasons">' + reasons + '</ul>' +
 
-      '<button type="button" class="found-btn" id="foundBtn">found / safe</button>' +
+      (usingFixtures
+        ? '<button type="button" class="found-btn" disabled title="Sample data has no gateway to send this to.">found / safe — needs live gateway</button>'
+        : '<button type="button" class="found-btn" id="foundBtn">found / safe</button>') +
       '<span id="foundStatus" class="visually-hidden" role="status" aria-live="polite"></span>';
 
-    $("foundBtn").addEventListener("click", function () { markFound(c.origin, this); });
+    if (!usingFixtures) {
+      $("foundBtn").addEventListener("click", function () { markFound(c.origin, this); });
+    }
   }
 
   function markFound(origin, btn) {
@@ -411,7 +439,7 @@
       })
       .catch(function () {
         btn.disabled = false;
-        btn.textContent = "found / safe (retry)";
+        btn.textContent = "found / safe (retry — could not reach the gateway)";
         $("foundStatus").textContent = "Could not reach the gateway — tap to retry.";
       });
   }
