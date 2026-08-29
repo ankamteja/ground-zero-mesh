@@ -71,6 +71,8 @@ Tick items in the same PR that does the work.
 - [x] `[B]` Step 4 — role switch controls what runs (Gateway server / Node agent+sensors / Relay gossip-only)
   - [ ] `[B]` gateway hotspot still cannot be opened programmatically without system permissions — responder opens it by hand
 - [ ] `[B]` Step 5 — 3-phone field test; per-API permission matrix on oldest + newest phone; record hardware in PR body
+  - [x] `[B]` stand-in: `MeshFieldSimulationTest` — A—B—C over `SimNetwork`, SABDA at the gateway, store-and-forward replay after a partition
+  - [ ] `[B]` the real 3-phone run — still not done, and Nearby's discovery/permission path is untested by the stand-in
 
 ## Phase 5 — LoRa bridge  `[B]`
 

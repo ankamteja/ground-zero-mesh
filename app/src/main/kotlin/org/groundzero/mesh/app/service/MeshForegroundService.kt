@@ -90,12 +90,15 @@ class MeshForegroundService : Service() {
             // TODO: a responder-entered zone. Localisation is not solved, and a fabricated
             // coordinate here would read as solved on the dashboard.
             addressZone = UNSET_ZONE,
-            transport = GossipOriginTransport(radio, gossip),
+            transport = GossipOriginTransport(radio, gossip) { envelope, frame ->
+                storeAndForward.offer(envelope.addressZone, envelope.dedupKey, frame)
+            },
             clockMs = clock,
         )
-        MeshStack.install(gossip, agent, clock)
+        MeshStack.install(gossip, agent, clock, storeAndForward)
 
         radio.onReceive { from, frame -> MeshStack.ingest(frame, from) }
+        radio.onPeerConnected { peer -> replayTo(radio, peer) }
         radio.start()
 
         sensors = SensorBridge(this, handler)
@@ -105,6 +108,20 @@ class MeshForegroundService : Service() {
         handler.postDelayed(maintenance, MAINTENANCE_INTERVAL_MS)
         handler.postDelayed(heartbeat, NodeAgent.HEARTBEAT_INTERVAL_MS)
         Log.i(TAG, "mesh service up as $localId")
+    }
+
+    /**
+     * Hand a reconnected peer what it missed.
+     *
+     * The peer cannot ask for this: it does not know what it did not hear. The receiver's
+     * gossip layer drops anything it already holds, so an over-generous replay costs one
+     * frame per report rather than a flood.
+     */
+    private fun replayTo(radio: NearbyTransport, peer: org.groundzero.mesh.propagation.NodeId) {
+        val frames = MeshStack.bufferedFrames()
+        if (frames.isEmpty()) return
+        frames.forEach { runCatching { radio.send(it, peer) } }
+        Log.i(TAG, "replayed ${frames.size} buffered frame(s) to $peer")
     }
 
     /**

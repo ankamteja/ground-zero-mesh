@@ -46,6 +46,25 @@ class StoreAndForward(
         }
     }
 
+    /**
+     * Every un-expired frame in every bucket, oldest first.
+     *
+     * What a node replays to a peer that just reconnected. It cannot be done per zone,
+     * because the buckets are keyed by hash and the plain zone tags are deliberately not
+     * kept — and a reconnecting peer has not said which zones it missed anyway. The
+     * receiver's gossip layer suppresses anything it already holds, so replaying more than
+     * strictly necessary costs one frame each, not a storm.
+     */
+    fun drainAll(): List<ByteArray> {
+        val now = clock()
+        return buckets.values.flatMap { list ->
+            synchronized(list) {
+                list.removeAll { it.expiresAt <= now }
+                list.map { it.frame.copyOf() }
+            }
+        }
+    }
+
     fun sweep() {
         val now = clock()
         buckets.values.forEach { list -> synchronized(list) { list.removeAll { it.expiresAt <= now } } }
