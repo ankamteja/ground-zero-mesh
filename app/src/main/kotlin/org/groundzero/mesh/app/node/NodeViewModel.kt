@@ -24,9 +24,16 @@ class NodeViewModel(
     private val now: () -> Long = { System.currentTimeMillis() / 1000 },
     private val raiseOnMesh: (Severity) -> Envelope? = MeshStack::raiseSos,
     private val applyRole: (MeshRole) -> Unit = MeshStack::setRole,
+    initialRole: () -> MeshRole = MeshStack::currentRole,
 ) : ViewModel() {
 
-    var role by mutableStateOf(MeshRole.NODE)
+    /**
+     * Seeded from the running stack, not hardcoded to [MeshRole.NODE]. The role survives a
+     * service restart via [RoleStore], so an Activity rebuilt after one would otherwise show
+     * "victim" while the stack underneath is still serving as a gateway — the same UI/stack
+     * divergence [RoleStore] exists to prevent, just from the other side.
+     */
+    var role by mutableStateOf(initialRole())
         private set
 
     var selectedSeverity by mutableStateOf(Severity.STRUCTURAL_ENTRAPMENT)

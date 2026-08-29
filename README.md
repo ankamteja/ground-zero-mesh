@@ -73,6 +73,40 @@ docs/   docs/architecture.md — the ported-formula ledger.
 
 Requires JDK 21. The `app/` module additionally needs the Android SDK.
 
+## The three-phone demo
+
+Three phones and a laptop, in one room about 30 m long. Each phone picks its role once on
+the first screen; the choice survives a restart (`RoleStore`), so it does not need setting
+again mid-demo.
+
+| Where | Role to pick | What the screen does |
+|---|---|---|
+| One end of the room | **victim** | Severity, then one large SOS button. Details (score, "why", sensory slider) are behind a disclosure. |
+| Middle, ~15 m along | **relay** | No SOS. Live counters — received / relayed onward / duplicates suppressed / undecodable / buffered — and a log of recent frames. |
+| Other end, with the laptop | **responder** | Starts the board server. The laptop reads it. |
+
+The spacing is the demo, not staging. Victim and responder must be far enough apart that
+they cannot hear each other directly, so the SOS only arrives by way of the relay — which is
+what makes the board's "relayed" reading true rather than decorative.
+
+1. Install on all three phones, grant the Nearby permissions, pick the roles above.
+2. On the responder phone, open its Wi-Fi hotspot **by hand** (Android does not allow an app
+   to open one without system permissions), then press *Start responder server*.
+3. Join that hotspot from the laptop and browse to `http://<responder-phone-ip>:8080/`.
+4. Press SOS on the victim phone.
+
+What to point at:
+
+- The relay's counters move — the report passed through a phone the responder cannot hear.
+- On **Ranked list**, the incident's evidence line reads `relayed`, not `first-hand`: the
+  gateway is holding testimony, and the first-hand gate says so.
+- On **Digital twin**, the relay appears as a carrier on the outer ring with a packet running
+  the edge to the incident. A victim phone whose zone is still `unset` renders parked outside
+  the building and labelled `UNPLACED` rather than being drawn on the ground floor.
+
+Both dashboard views are the same URL and the same board — the twin is a way of reading the
+ranking, not a second source of truth.
+
 ## What's real vs. simulated right now
 
 Every layer above is implemented and unit-tested (`core` alone is 150+ tests). What has
