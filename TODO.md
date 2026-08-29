@@ -56,7 +56,7 @@ Tick items in the same PR that does the work.
 ## Phase 5 — LoRa bridge  `[B]`
 
 - [x] `[B]` verify Meshtastic payload figure — it is **233**, not 237 (`docs/research/meshtastic-payload.md`); `CompactCodec.LORA_MAX_FRAME` set to 233
-- [ ] `[B]` `LoRaBridgeTransport : Transport` — ESP32 / Meshtastic over BLE-to-serial, `CompactCodec` frames, `maxFrameBytes = 233`
+- [x] `[B]` `LoRaBridgeTransport : Transport` — ESP32 / Meshtastic over BLE-to-serial, `CompactCodec` frames (BLE GATT plumbing unverified on hardware)
 - [ ] `[B]` bench against `SimTransport`-driven envelopes before real radio
 
 ## Open assumptions (name them in the deck and in UI copy)
