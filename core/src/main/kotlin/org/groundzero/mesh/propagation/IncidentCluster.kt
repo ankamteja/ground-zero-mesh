@@ -1,0 +1,129 @@
+package org.groundzero.mesh.propagation
+
+/**
+ * One physical incident, assembled from however many reports described it.
+ *
+ * A responder must never be shown report spam. Ten relays of one trapped person is one
+ * person, and a dashboard that shows it as ten is worse than useless — it inflates exactly
+ * the zone that is best-connected rather than the one that is worst off.
+ */
+data class IncidentCluster(
+    /** [Envelope.dedupKey] of the originating report. */
+    val key: String,
+    val origin: NodeId,
+    val zone: String,
+    val severity: Severity,
+    /** Highest danger score seen for this incident. */
+    val dangerScore: Double,
+    /** The strongest tier any holder can claim for it. */
+    val tier: EpistemologyTier,
+    /** Distinct peers that relayed this to us. Corroboration, not duplication. */
+    val corroborators: Set<NodeId>,
+    /** Fewest links this reached us by — the closest this incident has ever been. */
+    val minHops: Int,
+    val firstSeenMs: Long,
+    val lastUpdatedMs: Long,
+    val slmSummary: String? = null,
+    /** True once a report for this incident arrived first-hand rather than as testimony. */
+    val firstHandHeld: Boolean = false,
+) {
+    /** Independent relayers beyond the first. Zero means single-sourced. */
+    val corroborationCount: Int get() = maxOf(0, corroborators.size - 1)
+
+    fun ageMs(nowMs: Long): Long = nowMs - lastUpdatedMs
+}
+
+/**
+ * Merges incoming envelopes into incidents.
+ *
+ * Dedup is by [Envelope.dedupKey] — origin node plus incident timestamp. That key is what
+ * makes the two-stage pipeline work: the Stage 3 refined broadcast deliberately reuses the
+ * Stage 1 timestamp, so it lands here as an *update* to an existing incident rather than
+ * as a second person needing rescue.
+ *
+ * ### The localisation caveat
+ *
+ * Clustering *within* a zone is not attempted, and the omission is deliberate. Merging two
+ * separate people into one incident would hide a casualty, and there is no signal available
+ * that could justify it: GPS is unreliable indoors and underground, and the zone tag is a
+ * coarse human-entered proxy. Under-merging shows a responder two entries for one person,
+ * which costs them a moment. Over-merging loses someone. See the open assumptions in
+ * `docs/architecture.md`.
+ */
+class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
+
+    private val clusters = LinkedHashMap<String, IncidentCluster>()
+
+    /**
+     * Fold one envelope in.
+     *
+     * [from] is the peer the frame arrived from, which is not the same as
+     * [Envelope.nodeId] — the origin is who is in trouble, the sender is who passed it
+     * along. Conflating them is how corroboration counts get inflated by a single chatty
+     * relay.
+     */
+    fun ingest(envelope: Envelope, from: NodeId?, nowMs: Long): IncidentCluster {
+        val key = envelope.dedupKey
+        val existing = clusters[key]
+        val isFirstHand = envelope.effectiveTier == EpistemologyTier.PRATYAKSA
+
+        val merged = if (existing == null) {
+            IncidentCluster(
+                key = key,
+                origin = envelope.nodeId,
+                zone = envelope.addressZone,
+                severity = envelope.severity,
+                dangerScore = envelope.dangerScore,
+                tier = envelope.effectiveTier,
+                corroborators = setOfNotNull(from),
+                minHops = envelope.hops,
+                firstSeenMs = nowMs,
+                lastUpdatedMs = nowMs,
+                slmSummary = envelope.slmSummary,
+                firstHandHeld = isFirstHand,
+            )
+        } else {
+            existing.copy(
+                // Severity is the person's own statement of how fast they die. Take the
+                // most urgent ever reported and never walk it back on a later, calmer relay.
+                severity = if (envelope.severity.rank < existing.severity.rank) {
+                    envelope.severity
+                } else {
+                    existing.severity
+                },
+                dangerScore = maxOf(existing.dangerScore, envelope.dangerScore),
+                tier = strongest(existing.tier, envelope.effectiveTier),
+                corroborators = existing.corroborators + setOfNotNull(from),
+                minHops = minOf(existing.minHops, envelope.hops),
+                lastUpdatedMs = nowMs,
+                // A later enrichment fills the summary in; it never blanks an existing one.
+                slmSummary = envelope.slmSummary ?: existing.slmSummary,
+                firstHandHeld = existing.firstHandHeld || isFirstHand,
+            )
+        }
+
+        clusters[key] = merged
+        return merged
+    }
+
+    /**
+     * Note that a peer's report agreed with, or contradicted, what we hold.
+     *
+     * Kept separate from [ingest] so trust is only moved by a caller that actually has
+     * grounds to judge — a node cannot reward a peer merely for talking.
+     */
+    fun judge(peer: NodeId, corroborated: Boolean) {
+        if (corroborated) trust.reinforce(peer) else trust.penalise(peer)
+    }
+
+    fun trustOf(peer: NodeId): Double = trust.trustOf(peer)
+
+    fun clusters(): List<IncidentCluster> = clusters.values.toList()
+
+    fun cluster(key: String): IncidentCluster? = clusters[key]
+
+    val size: Int get() = clusters.size
+
+    private fun strongest(a: EpistemologyTier, b: EpistemologyTier): EpistemologyTier =
+        if (a.ordinal <= b.ordinal) a else b
+}

@@ -167,3 +167,133 @@ TX notify = `…0003…`. MTU negotiated to 247; outbound datagrams chunked to t
 payload and written one acked op at a time. Node numbers map to `NodeId` by zero-extending
 the 32-bit value into the 48-bit space. The GATT plumbing is unverified against hardware —
 every such point is marked `VERIFY(hardware)` in the source.
+## L1 Node Agent (Phase 1)
+
+### Three independent tickers
+
+Ported from the reference implementation's per-concern tickers rather than a single
+lockstep loop. `NodeAgent` exposes `senseTick`, `heartbeatTick` and `livenessTick`
+separately, and sensing deliberately does **not** transmit.
+
+The reason is not tidiness. A lockstep loop couples how fast the device notices things to
+how fast it talks, so duty-cycling the radio to save battery would also blind the sensor.
+On a phone at 4% battery those two rates *will* be tuned differently.
+
+`core` carries no coroutine dependency and the agent owns no threads: whoever holds the
+schedule drives the ticks. That keeps the module pure-JVM and makes the agent
+deterministically testable, with no wall-clock sleeps anywhere in the suite.
+
+### Immediate override — divergence from the reference implementation
+
+`raiseSos()` broadcasts synchronously at `dangerScore = 1.00`, bypassing the EMA entirely,
+and forces the hysteresis gate to `ALARM`. Ambient sensing has to earn its way up the
+score machine; a person pressing the button does not. Measured in `NodeAgentTest`: a
+maximal sustained reading needs several sense ticks to reach `ALARM`, and those ticks are
+the entire margin for someone going under water.
+
+### `HysteresisGate` — ours, not ported
+
+`DangerScore.state()` maps a score to a posture with bare thresholds, which is correct for
+reading the score at an instant but not for *driving* anything: a score resting near a
+threshold crosses it repeatedly, and every crossing is a state change the agent would
+gossip. Flapping at 0.70 turns one event into a broadcast storm, on battery, in a
+blackout. Transitions therefore use the plain thresholds on the way up and
+`threshold - deadband` on the way down. Thresholds are the reference implementation's; the
+0.05 deadband is ours.
+
+### Event taxonomy — structure ported, weights deliberately inverted
+
+The taxonomy is the reference implementation's. The weights are not, and the inversion is
+the point: a **gradual drift** upward is water rising, and a **sudden drop** is a device
+that died or a person who stopped moving. Both outrank any spike here, where in a
+neighbourhood-watch mesh a sustained spike is the loud event and a drift is background.
+Getting these the wrong way round would make the agent quietest exactly when it should be
+loudest, so the ordering is asserted in a test rather than left to constants nobody
+rereads.
+
+---
+
+## Phase 3.5 — two-stage sensory pipeline
+
+### The classifier is a seam, and that is the design
+
+`SensoryClassifier` is a single-method interface with a deterministic implementation
+(`DeterministicSensoryClassifier` — thresholds, no model). Stage 2 is the only part of the
+pipeline that might need a quantised model, and the part most likely to run out of RAM,
+battery or time. Behind a seam, the deterministic version ships now and a real model drops
+in later without touching the protocol, the envelope, or anything downstream.
+
+`NodeAgent.completeSensoryWindow` treats a classifier that returns null, blocks, or
+**throws** as the same thing: no enrichment. The Stage 1 broadcast has already gone.
+Asserted directly — a classifier that throws leaves the override standing and the loop
+untouched.
+
+### Max-fuse, not sum
+
+`SensorySummary.fusedConfidence` is the **maximum** across channels. Ported as a measured
+finding, not a stylistic choice: each channel is near-blind exactly where another is
+strong, so summing or averaging lets two channels that saw nothing outvote the one that
+saw something. A phone pinned face-down in a dark basement has a blind camera and a
+deafened microphone; its IMU is the only witness.
+
+---
+
+## L2 Propagation (Phase 3)
+
+### Propagation dedup is not incident dedup
+
+The most consequential thing found while building this layer. `Envelope.dedupKey`
+identifies the *incident*, and the Stage 3 enrichment reuses it on purpose so downstream
+layers update the same person rather than inventing a second one.
+
+Suppressing forwards on incident identity alone therefore has a nasty consequence: the
+first relay has already seen the incident, so it drops the refined report on the floor and
+**the enrichment never reaches the responder** — the entire point of the sensory window,
+lost silently, one hop from the victim. Caught by the end-to-end test, not by any unit
+test, because each layer was individually correct.
+
+`Gossip.propagationKey()` therefore keys on incident identity *plus the content that can
+change* (severity, score, summary, views), excluding `hops` and `ttl` since those change on
+every forward. Same incident with new evidence travels once more; a byte-identical repeat,
+however many paths deliver it, does not.
+
+### Trust asymmetry, exercised rather than assumed
+
+`TrustConsensus` ports the reinforcement rule with gain 0.02 against loss 0.05. The
+handover is explicit that this must be *exercised adversarially* rather than assumed
+correct because the constants were copied accurately — copying a formula right and wiring
+it up wrong is the failure mode that looks most like success. `TrustConsensusTest` asserts
+the behaviour: a node cannot out-earn its own bad conduct, and a discredited node barely
+moves the consensus.
+
+### The first-hand gate is structural, not a threshold
+
+`FirstHandGate.ADVISORY_CAP = 0.98` holds testimony below the tier that commits a team, no
+matter how many nodes repeat it. It has to be a structural ceiling rather than a high
+threshold, or a sufficiently chatty cluster eventually crosses it arithmetically.
+Corroboration raises rank; it does not change what kind of knowledge something is.
+
+### Clustering stops at the zone boundary, deliberately
+
+`DedupCluster` merges by `dedupKey` and does not attempt to merge separate reports within
+a zone. Under-merging shows a responder two entries for one person, costing them a moment.
+Over-merging loses someone. With no reliable indoor position signal there is nothing that
+could justify the second risk — see the localisation entry in the open assumptions.
+
+---
+
+## L3 ranking (Phase 4, core half)
+
+`ResponderRanking` orders **lexicographically** — severity, then how it is known, then
+confidence, then recency — not by a weighted sum. Severity is a time-to-death ordering, so
+no amount of confidence about a structural entrapment may outrank a drowning. A weighted
+sum would permit exactly that trade, and it is not one a scoring function should make
+implicitly on a responder's behalf.
+
+The rolling action budget (14 actions) is ported and fits better here than in its origin:
+responders have finite boats and teams, so the board marks where capacity runs out.
+Nothing is hidden for being beyond it — everything is still shown and still ordered.
+
+`AiAdvisor` will layer on top of this. The ranking is deterministic and complete on its
+own, and the dashboard is fully functional with no model present and no internet at the
+perimeter.
