@@ -56,6 +56,18 @@ class GatewayServer(
         super.stop()
     }
 
+    /**
+     * NanoHTTPD auto-gzips any `text/*` or `*/json` response once the client's
+     * `Accept-Encoding` allows it — every browser does this by default; `curl` without
+     * `--compressed` does not, which is why this looked fine from a shell and dead in a
+     * browser. `GZIPOutputStream` only flushes on `finish()`, which NanoHTTPD calls after
+     * the response body stream reaches EOF — `/events`' [source] never does, by design, so
+     * every SSE push sat compressed and unflushed forever. None of these responses are
+     * large enough for gzip to matter; disabling it outright is simpler than special-casing
+     * the streaming one and safer than the next streaming response hitting the same bug.
+     */
+    override fun useGzipWhenAccepted(r: Response): Boolean = false
+
     override fun serve(session: IHTTPSession): Response = when {
         session.uri == "/resolve" && session.method == Method.POST -> resolve(session)
         session.uri == "/" || session.uri == "/index.html" -> asset("index.html", "text/html")

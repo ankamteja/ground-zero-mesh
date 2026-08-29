@@ -35,6 +35,14 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
 
+    <!--
+      Nearby Connections itself never needs this — it's IPC to Play Services, not a raw
+      socket. GatewayServer's NanoHTTPD ServerSocket does: without it, Android denies the
+      socket() syscall outright (SocketException: EPERM), not a bind/port failure. Every
+      other permission above is for L0 discovery; this one is for L3's dashboard server.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Scanning must survive screen-off -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission
