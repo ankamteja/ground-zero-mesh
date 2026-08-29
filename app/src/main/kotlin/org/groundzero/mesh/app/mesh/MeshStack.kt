@@ -9,6 +9,7 @@ import org.groundzero.mesh.app.transport.StoreAndForward
 import org.groundzero.mesh.gateway.RankedIncident
 import org.groundzero.mesh.gateway.ResponderRanking
 import org.groundzero.mesh.propagation.Envelope
+import org.groundzero.mesh.propagation.EpistemologyTier
 import org.groundzero.mesh.propagation.Gossip
 import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.propagation.Severity
@@ -41,6 +42,9 @@ object MeshStack {
     private var role: MeshRole = MeshRole.NODE
     private var roleListener: ((MeshRole) -> Unit)? = null
 
+    private val activity = ArrayDeque<MeshActivityEntry>()
+    private var totalReceived: Int = 0
+
     val isInstalled: Boolean get() = synchronized(lock) { gossip != null }
 
     fun install(
@@ -65,6 +69,8 @@ object MeshStack {
         peers = null
         role = MeshRole.NODE
         roleListener = null
+        activity.clear()
+        totalReceived = 0
     }
 
     fun currentRole(): MeshRole = synchronized(lock) { role }
@@ -102,9 +108,55 @@ object MeshStack {
      * Duplicates are not buffered — they are already in the outbox from the first time.
      */
     fun ingest(frame: ByteArray, from: NodeId?): Envelope? = synchronized(lock) {
-        val envelope = gossip?.ingest(frame, from) ?: return null
-        store?.offer(envelope.addressZone, envelope.dedupKey, frame)
-        envelope
+        val g = gossip ?: return null
+        val duplicatesBefore = g.suppressedDuplicates
+        val envelope = g.ingest(frame, from)
+        if (envelope != null) {
+            store?.offer(envelope.addressZone, envelope.dedupKey, frame)
+            totalReceived++
+            record(
+                MeshActivityEntry(
+                    atMs = clockMs(),
+                    from = from,
+                    outcome = MeshActivityOutcome.RECEIVED_NEW,
+                    zone = envelope.addressZone,
+                    severity = envelope.severity,
+                    effectiveTier = envelope.effectiveTier,
+                )
+            )
+            return envelope
+        }
+        // A frame that decoded but was already held, versus one that never decoded at all.
+        // Only the counter can tell them apart from here — a null return means both.
+        val outcome = if (g.suppressedDuplicates > duplicatesBefore) {
+            MeshActivityOutcome.DUPLICATE
+        } else {
+            MeshActivityOutcome.DROPPED
+        }
+        totalReceived++
+        record(MeshActivityEntry(atMs = clockMs(), from = from, outcome = outcome))
+        null
+    }
+
+    /** Newest last. Capped — a relay left in a stairwell must not grow a log forever. */
+    private fun record(entry: MeshActivityEntry) {
+        activity.addLast(entry)
+        while (activity.size > ACTIVITY_LOG_CAPACITY) activity.removeFirst()
+    }
+
+    /** The recent inbound frames this device saw, oldest first. Empty until installed. */
+    fun recentActivity(): List<MeshActivityEntry> = synchronized(lock) { activity.toList() }
+
+    /** Running totals for the relay screen. Zeroed while nothing is installed. */
+    fun activityCounts(): MeshActivityCounts = synchronized(lock) {
+        val g = gossip ?: return MeshActivityCounts(0, 0, 0, 0, 0)
+        MeshActivityCounts(
+            received = totalReceived,
+            relayed = g.relayed,
+            duplicates = g.suppressedDuplicates,
+            dropped = g.droppedUndecodable,
+            stored = store?.size() ?: 0,
+        )
     }
 
     /** What to replay to a peer that just reconnected. Empty when nothing was buffered. */
@@ -160,4 +212,44 @@ object MeshStack {
         peers?.markGone(nodeId)
         Unit
     }
+
+    /** How many entries [recentActivity] keeps. */
+    const val ACTIVITY_LOG_CAPACITY = 50
 }
+
+/** What became of one inbound frame. */
+enum class MeshActivityOutcome { RECEIVED_NEW, DUPLICATE, DROPPED }
+
+/**
+ * One inbound frame, as the relay screen shows it.
+ *
+ * [zone], [severity] and [effectiveTier] are only populated for
+ * [MeshActivityOutcome.RECEIVED_NEW], where the decoded envelope was already in hand. A
+ * duplicate or an undecodable frame is deliberately *not* decoded a second time to fill them
+ * in: this layer does not know which codec the sender used — that is chosen from the
+ * transport's frame budget — so it would have to guess, and a guessed zone on a screen is
+ * worse than an honestly blank one.
+ */
+data class MeshActivityEntry(
+    val atMs: Long,
+    val from: NodeId?,
+    val outcome: MeshActivityOutcome,
+    val zone: String? = null,
+    val severity: Severity? = null,
+    val effectiveTier: EpistemologyTier? = null,
+)
+
+/**
+ * Running totals for the relay screen.
+ *
+ * [received] counts every frame that reached this node, including duplicates and
+ * undecodables; [relayed] is how many were passed on, which is lower by design — see
+ * [Gossip] on why a mesh that forwards everything does not survive the night.
+ */
+data class MeshActivityCounts(
+    val received: Int,
+    val relayed: Int,
+    val duplicates: Int,
+    val dropped: Int,
+    val stored: Int,
+)

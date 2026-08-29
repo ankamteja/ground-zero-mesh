@@ -4,6 +4,7 @@ import org.groundzero.mesh.agent.NodeAgent
 import org.groundzero.mesh.app.node.MeshRole
 import org.groundzero.mesh.app.transport.GossipOriginTransport
 import org.groundzero.mesh.app.transport.PeerTable
+import org.groundzero.mesh.propagation.EpistemologyTier
 import org.groundzero.mesh.propagation.Gossip
 import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.propagation.PeerLiveness
@@ -47,6 +48,28 @@ class MeshStackTest {
         )
     }
 
+    /** A frame from b, encoded exactly as b's own transport would put it on the wire. */
+    private fun frameFromB(severity: Severity = Severity.STRUCTURAL_ENTRAPMENT): ByteArray {
+        val sent = ArrayList<ByteArray>()
+        val capture = object : org.groundzero.mesh.transport.Transport {
+            override val localId = b
+            override val maxFrameBytes = net.transportFor(b).maxFrameBytes
+            override fun start() = Unit
+            override fun stop() = Unit
+            override fun send(frame: ByteArray, to: NodeId?) { sent += frame }
+            override fun onReceive(listener: (NodeId, ByteArray) -> Unit) = Unit
+            override fun knownPeers(): List<NodeId> = emptyList()
+        }
+        NodeAgent(
+            nodeId = b,
+            saltFingerprint = "0".repeat(32),
+            addressZone = "floor-2-east",
+            transport = capture,
+            clockMs = net::nowMs,
+        ).raiseSos(severity)
+        return sent.single()
+    }
+
     @Test
     fun `an uninstalled stack is inert, not broken`() {
         assertFalse(MeshStack.isInstalled)
@@ -54,6 +77,60 @@ class MeshStackTest {
         assertNull(MeshStack.heartbeatTick())
         assertNull(MeshStack.ingest(ByteArray(4), b))
         assertTrue(MeshStack.rankedBoard().isEmpty())
+        assertTrue(MeshStack.recentActivity().isEmpty())
+        assertEquals(MeshActivityCounts(0, 0, 0, 0, 0), MeshStack.activityCounts())
+    }
+
+    @Test
+    fun `a new frame is logged with what the envelope actually said`() {
+        install()
+        MeshStack.ingest(frameFromB(Severity.DROWNING_IMMINENT), b)
+
+        val entry = MeshStack.recentActivity().single()
+        assertEquals(MeshActivityOutcome.RECEIVED_NEW, entry.outcome)
+        assertEquals(b, entry.from)
+        assertEquals("floor-2-east", entry.zone)
+        assertEquals(Severity.DROWNING_IMMINENT, entry.severity)
+        // It crossed a radio, so this node holds testimony however the sender stamped it.
+        assertEquals(EpistemologyTier.SABDA, entry.effectiveTier)
+    }
+
+    @Test
+    fun `a repeat of the same frame is logged as a duplicate, not as news`() {
+        install()
+        val frame = frameFromB()
+        MeshStack.ingest(frame, b)
+        MeshStack.ingest(frame, b)
+
+        val outcomes = MeshStack.recentActivity().map { it.outcome }
+        assertEquals(
+            listOf(MeshActivityOutcome.RECEIVED_NEW, MeshActivityOutcome.DUPLICATE),
+            outcomes,
+        )
+        // A duplicate is not decoded twice, so it carries no zone to show.
+        assertNull(MeshStack.recentActivity().last().zone)
+        assertEquals(1, MeshStack.activityCounts().duplicates)
+    }
+
+    @Test
+    fun `an undecodable frame is logged as dropped rather than lost silently`() {
+        install()
+        MeshStack.ingest(byteArrayOf(9, 9, 9, 9), b)
+
+        val entry = MeshStack.recentActivity().single()
+        assertEquals(MeshActivityOutcome.DROPPED, entry.outcome)
+        assertEquals(1, MeshStack.activityCounts().dropped)
+    }
+
+    @Test
+    fun `the activity log is capped so a long-running relay cannot grow it forever`() {
+        install()
+        repeat(MeshStack.ACTIVITY_LOG_CAPACITY + 10) {
+            MeshStack.ingest(byteArrayOf(9, 9, 9, 9), b)
+        }
+        assertEquals(MeshStack.ACTIVITY_LOG_CAPACITY, MeshStack.recentActivity().size)
+        // The counter is not capped — it is the honest total, not a window.
+        assertEquals(MeshStack.ACTIVITY_LOG_CAPACITY + 10, MeshStack.activityCounts().received)
     }
 
     @Test

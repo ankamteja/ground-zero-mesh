@@ -56,6 +56,14 @@ class StoreAndForward(
         }
     }
 
+    /** Frames currently buffered across every bucket, expired ones excluded. */
+    fun size(): Int {
+        val now = clock()
+        return buckets.values.sumOf { list ->
+            synchronized(list) { list.count { it.expiresAt > now } }
+        }
+    }
+
     fun sweep() {
         val now = clock()
         buckets.values.forEach { list -> synchronized(list) { list.removeAll { it.expiresAt <= now } } }

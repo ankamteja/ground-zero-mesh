@@ -704,3 +704,50 @@ off disk, where `fetch` is blocked by the `file://` origin.
 Unplaced incidents render in a different colour, labelled `UNPLACED`, parked clear of the
 building — the same honesty rule the model enforces. Carriers sit on a ring outside the
 building labelled *position unknown*, because that is exactly what is known about them.
+
+---
+
+## The three-phone demo kit (Phase 14)
+
+### One screen per role, because the three phones are doing different jobs
+
+`NodeScreen` became a dispatcher over `VictimScreen` / `RelayScreen` / `ResponderScreen`. The
+`MeshRole` enum keeps its `NODE` / `RELAY` / `GATEWAY` names — load-bearing across
+`MeshStack`, `RoleStore` and the tests — and only the on-screen labels read victim / relay /
+responder.
+
+The victim screen is the one with a real constraint: a person deciding whether to press the
+button is not reading an EMA. The score, the "why" panel and the sensory slider all still
+exist, behind a disclosure closed by default, so nothing competes with the button at the
+moment it matters.
+
+`NodeViewModel` now seeds `role` from `MeshStack.currentRole()` instead of hardcoding `NODE`.
+`RoleStore` restores the role *into the stack* after a service restart, so a hardcoded initial
+value in the UI put the two back out of step in the other direction — the screen claiming
+victim while the stack served as a gateway.
+
+`ResponderScreen` owns the gateway control that was inlined in `MainActivity`, and stops the
+server in `onDispose` rather than in a `LaunchedEffect` keyed on the role. Leaving the role
+has to actually stop serving; a board still served by a phone that is no longer the gateway is
+exactly the stale truth this project exists to avoid.
+
+### The relay screen needed the ingest path to say what it did
+
+`Gossip` already counted `relayed`, `suppressedDuplicates` and `droppedUndecodable`, and
+`MeshStack.ingest` was already the single chokepoint for inbound frames — but a null return
+meant *either* a duplicate *or* an undecodable frame, and a relay screen has to tell those
+apart. `ingest` now reads the duplicate counter across the inner call to classify the outcome,
+and appends a capped 50-entry log (`MeshActivityEntry`).
+
+**A duplicate or dropped frame is deliberately not decoded a second time** to fill in its zone
+and severity. This layer does not know which codec the sender used — that is chosen from the
+transport's frame budget, never hardcoded — so it would have to guess, and a guessed zone on a
+responder's screen is worse than an honestly blank one. Only `RECEIVED_NEW` carries those
+fields, because there the decoded envelope is already in hand.
+
+`received` is shown next to `relayed` rather than instead of it: the gap between them is the
+suppression that keeps the mesh alive under load, so a relay forwarding everything it heard
+would be the bug, not the success.
+
+`StoreAndForward.size()` reports the buffered count for the same screen, counting only
+un-expired frames under the same per-bucket lock `drainAll` and `sweep` already take.

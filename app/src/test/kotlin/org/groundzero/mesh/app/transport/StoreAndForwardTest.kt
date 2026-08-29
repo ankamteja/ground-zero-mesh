@@ -48,4 +48,15 @@ class StoreAndForwardTest {
         repeat(10) { saf.offer("z", "n@$it", byteArrayOf(it.toByte())) }
         assertEquals(4, saf.drainAll().size)
     }
+
+    @Test
+    fun sizeCountsAcrossBucketsAndExcludesExpired() {
+        assertEquals(0, saf.size())
+        saf.offer("z", "n@1", byteArrayOf(1))
+        saf.offer("other", "m@1", byteArrayOf(2))
+        assertEquals(2, saf.size())
+
+        now += 1001
+        assertEquals(0, saf.size())
+    }
 }

@@ -14,17 +14,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import org.groundzero.mesh.app.gateway.GatewayController
-import org.groundzero.mesh.app.gateway.GatewayServer
-import org.groundzero.mesh.app.mesh.MeshStack
-import org.groundzero.mesh.app.node.MeshRole
 import org.groundzero.mesh.app.node.NodeScreen
 import org.groundzero.mesh.app.node.NodeViewModel
 import org.groundzero.mesh.app.permissions.MeshPermissions
@@ -52,10 +47,7 @@ class MainActivity : ComponentActivity() {
                             }) { Text("Grant") }
                         }
                     } else {
-                        Column {
-                            NodeScreen(nodeViewModel, modifier = Modifier.padding(bottom = 0.dp))
-                            GatewayControl(active = nodeViewModel.role == MeshRole.GATEWAY)
-                        }
+                        NodeScreen(nodeViewModel)
                     }
                 }
             }
@@ -65,35 +57,5 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         if (MeshPermissions.allGranted(this)) MeshForegroundService.start(this)
-    }
-
-    @androidx.compose.runtime.Composable
-    private fun GatewayControl(active: Boolean) {
-        var running by remember { mutableStateOf(GatewayController.isRunning) }
-        // Leaving the Gateway role must actually stop serving. Hiding the button while the
-        // server kept running would leave a board being served by a phone that is no longer
-        // the gateway.
-        androidx.compose.runtime.LaunchedEffect(active) {
-            if (!active && GatewayController.isRunning) {
-                GatewayController.stop()
-                running = false
-            }
-        }
-        if (!active) return
-        Column(Modifier.padding(16.dp)) {
-            TextButton(onClick = {
-                if (running) {
-                    GatewayController.stop()
-                } else {
-                    GatewayController.start(this@MainActivity, clusterSource = MeshStack::rankedBoard)
-                }
-                running = GatewayController.isRunning
-            }) {
-                Text(
-                    if (running) "Stop responder server (:${GatewayServer.DEFAULT_PORT})"
-                    else "Start responder server"
-                )
-            }
-        }
     }
 }
