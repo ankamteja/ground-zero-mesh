@@ -1,0 +1,19 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android / IDE
+.idea/
+*.iml
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# OS
+.DS_Store
+
+# Planning / scratch — keep out of the repo
+docs/planning/
+*.local.md
