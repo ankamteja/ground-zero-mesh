@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ground-Zero Mesh — Responder View</title>
+<style>
+  :root {
+    --bg: #f6f7f7; --panel: #ffffff; --border: #e2e4e4; --text: #191c1b;
+    --muted: #5c6260; --accent: #2f6f4f;
+    --drown: #cf3b30; --trap: #b26b00; --other: #3a7d44;
+    --shadow: 0 1px 2px rgba(0,0,0,.05);
+  }
+  html[data-theme="dark"] {
+    --bg: #0e1110; --panel: #161a18; --border: #262b28; --text: #e7eae8;
+    --muted: #99a09d; --accent: #4a9a72;
+    --drown: #e2564a; --trap: #d08a2c; --other: #57a163;
+    --shadow: none;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 12px 18px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    font-size: 13px; letter-spacing: .12em; text-transform: uppercase;
+    margin: 0; font-weight: 600;
+  }
+  .spacer { flex: 1; }
+  .status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.live { background: var(--other); }
+  .dot.down { background: var(--drown); }
+  button.toggle {
+    font: inherit; font-size: 12px; color: var(--text); background: transparent;
+    border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer;
+  }
+  .note {
+    padding: 8px 18px; font-size: 12px; color: var(--muted);
+    border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  main { padding: 18px; max-width: 1200px; margin: 0 auto; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; box-shadow: var(--shadow); margin-bottom: 18px;
+  }
+  .panel h2 {
+    font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+    margin: 0 0 10px; font-weight: 600;
+  }
+  .perimeter { display: flex; flex-wrap: wrap; gap: 8px; }
+  .zonechip {
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+    border: 1px solid var(--border); border-radius: 8px; font-size: 13px;
+  }
+  .zonechip .bar { width: 4px; height: 18px; border-radius: 2px; }
+  .advice { color: var(--text); font-size: 13px; }
+  .advice .tag {
+    font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); display: block; margin-bottom: 4px;
+  }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; box-shadow: var(--shadow);
+  }
+  .card.dim { opacity: .5; }
+  .card .top { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+  .rank {
+    font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15px;
+    min-width: 26px;
+  }
+  .rank.out { color: var(--muted); font-weight: 400; }
+  .zone { font-weight: 600; }
+  .sev {
+    margin-left: auto; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 5px;
+  }
+  .sev .mark { font-size: 11px; }
+  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+  .metrics div { display: flex; justify-content: space-between; font-size: 12px; }
+  .metrics .k { color: var(--muted); }
+  .metrics .v { font-variant-numeric: tabular-nums; }
+  .tier { border-bottom: 1px dotted var(--muted); cursor: help; }
+  .outnote { margin-top: 8px; font-size: 11px; color: var(--muted); }
+  footer { padding: 14px 18px; color: var(--muted); font-size: 12px; text-align: center; }
+  @media (max-width: 480px) { .metrics { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ground-Zero Mesh — Responder View</h1>
+  <div class="spacer"></div>
+  <div class="status"><span class="dot" id="dot"></span><span id="conn">connecting…</span></div>
+  <div class="status" id="updated">—</div>
+  <button class="toggle" id="themeBtn">light</button>
+</header>
+
+<div class="note">Zones are coarse proxies, not coordinates. Localisation is approximate — treat ordering, not position, as the signal.</div>
+
+<main>
+  <div class="panel">
+    <h2>Advisory (non-binding)</h2>
+    <div class="advice"><span class="tag">AI summary — does not change the ranking</span><span id="advice">—</span></div>
+  </div>
+
+  <div class="panel">
+    <h2>Perimeter</h2>
+    <div class="perimeter" id="perimeter"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Ranked clusters</h2>
+    <div class="grid" id="grid"></div>
+  </div>
+</main>
+
+<footer id="foot">no data</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var SEV = {
+    DROWNING_IMMINENT: { label: "drowning", mark: "▲", color: "var(--drown)", order: 0 },
+    STRUCTURAL_ENTRAPMENT: { label: "entrapment", mark: "■", color: "var(--trap)", order: 1 },
+    OTHER: { label: "other", mark: "●", color: "var(--other)", order: 2 }
+  };
+  var TIER = {
+    PRATYAKSA: "First-hand: a node observed this directly.",
+    ANUMANA: "Inferred: derived from sensor signals, not observed directly.",
+    SABDA: "Relayed: heard from another node, not yet confirmed."
+  };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var es = null, pollTimer = null, lastGood = 0;
+
+  // ---- theme ----
+  try {
+    var saved = localStorage.getItem("gzm-theme");
+    if (saved) document.documentElement.setAttribute("data-theme", saved);
+  } catch (e) {}
+  function syncThemeBtn() {
+    var d = document.documentElement.getAttribute("data-theme") === "dark";
+    $("themeBtn").textContent = d ? "light" : "dark";
+  }
+  syncThemeBtn();
+  $("themeBtn").onclick = function () {
+    var d = document.documentElement.getAttribute("data-theme") === "dark";
+    var next = d ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("gzm-theme", next); } catch (e) {}
+    syncThemeBtn();
+  };
+
+  // ---- connection ----
+  function setConn(state, text) {
+    $("dot").className = "dot" + (state ? " " + state : "");
+    $("conn").textContent = text;
+  }
+
+  function connect() {
+    if (typeof EventSource !== "undefined") {
+      try {
+        es = new EventSource("/events");
+        es.onopen = function () { setConn("live", "live (stream)"); };
+        es.onmessage = function (ev) { ingest(ev.data); };
+        es.onerror = function () {
+          setConn("down", "stream lost — polling");
+          if (es) { es.close(); es = null; }
+          startPolling();
+        };
+        return;
+      } catch (e) { /* fall through */ }
+    }
+    startPolling();
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    var tick = function () {
+      fetch("/snapshot", { cache: "no-store" })
+        .then(function (r) { return r.text(); })
+        .then(function (t) { setConn("live", "live (poll)"); ingest(t); })
+        .catch(function () {
+          setConn("down", "no gateway connection");
+          if (Date.now() - lastGood > 8000) tryFixtures();
+        });
+    };
+    tick();
+    pollTimer = setInterval(tick, 3000);
+  }
+
+  function tryFixtures() {
+    fetch("fixtures.json", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        setConn("", "preview (fixtures.json)");
+        render(Array.isArray(j) ? { advice: "Preview data.", clusters: j } : j);
+      })
+      .catch(function () {});
+  }
+
+  function ingest(text) {
+    var payload;
+    try { payload = JSON.parse(text); } catch (e) { return; }
+    lastGood = Date.now();
+    render(payload);
+  }
+
+  // ---- render ----
+  function render(payload) {
+    var clusters = (payload && payload.clusters) || [];
+    // Defensive re-sort: severity, then trust (corroboration + tier), then recency.
+    var tierRank = { PRATYAKSA: 2, ANUMANA: 1, SABDA: 0 };
+    clusters = clusters.slice().sort(function (a, b) {
+      var sa = (SEV[a.severity] || SEV.OTHER).order, sb = (SEV[b.severity] || SEV.OTHER).order;
+      if (sa !== sb) return sa - sb;
+      var ta = a.corroboration + (tierRank[a.effectiveTier] || 0);
+      var tb = b.corroboration + (tierRank[b.effectiveTier] || 0);
+      if (ta !== tb) return tb - ta;
+      return (a.lastSeenSecondsAgo || 0) - (b.lastSeenSecondsAgo || 0);
+    });
+
+    $("advice").textContent = (payload && payload.advice) || "—";
+    $("updated").textContent = "updated " + new Date().toLocaleTimeString();
+
+    renderPerimeter(clusters);
+    renderCards(clusters);
+
+    var inBudget = clusters.filter(function (c) { return c.recommendedActionRank != null; }).length;
+    $("foot").textContent = clusters.length + " clusters · " + inBudget + " within action budget";
+  }
+
+  function renderPerimeter(clusters) {
+    var byZone = {};
+    clusters.forEach(function (c) {
+      var cur = byZone[c.zone];
+      var o = (SEV[c.severity] || SEV.OTHER).order;
+      if (cur == null || o < cur) byZone[c.zone] = o;
+    });
+    var el = $("perimeter");
+    el.innerHTML = "";
+    Object.keys(byZone).forEach(function (zone) {
+      var order = byZone[zone];
+      var sev = Object.keys(SEV).filter(function (k) { return SEV[k].order === order; })[0];
+      var chip = document.createElement("div");
+      chip.className = "zonechip";
+      chip.innerHTML = '<span class="bar" style="background:' + SEV[sev].color + '"></span>' +
+                       '<span>' + esc(zone) + '</span>';
+      el.appendChild(chip);
+    });
+    if (!Object.keys(byZone).length) el.textContent = "no zones reporting";
+  }
+
+  function renderCards(clusters) {
+    var grid = $("grid");
+    grid.innerHTML = "";
+    if (!clusters.length) { grid.textContent = "no clusters"; return; }
+    clusters.forEach(function (c) {
+      var sev = SEV[c.severity] || SEV.OTHER;
+      var inBudget = c.recommendedActionRank != null;
+      var card = document.createElement("div");
+      card.className = "card" + (inBudget ? "" : " dim");
+      card.innerHTML =
+        '<div class="top">' +
+          '<span class="rank ' + (inBudget ? "" : "out") + '">' + (inBudget ? "#" + c.recommendedActionRank : "—") + '</span>' +
+          '<span class="zone">' + esc(c.zone) + '</span>' +
+          '<span class="sev" style="color:' + sev.color + '"><span class="mark">' + sev.mark + '</span>' + sev.label + '</span>' +
+        '</div>' +
+        '<div class="metrics">' +
+          kv("corroboration", "×" + c.corroboration) +
+          kv("danger score", pct(c.dangerScore)) +
+          kv("evidence", '<span class="tier" title="' + esc(TIER[c.effectiveTier] || "") + '">' + tierLabel(c.effectiveTier) + '</span>') +
+          kv("last seen", ago(c.lastSeenSecondsAgo)) +
+          kv("reports folded", String(c.reportCount)) +
+        '</div>' +
+        (inBudget ? "" : '<div class="outnote">outside the action budget — listed, not prioritised</div>');
+      grid.appendChild(card);
+    });
+  }
+
+  function kv(k, v) { return '<div><span class="k">' + k + '</span><span class="v">' + v + '</span></div>'; }
+  function pct(d) { return Math.round((d || 0) * 100) + "%"; }
+  function ago(s) {
+    s = s || 0;
+    if (s < 90) return s + "s";
+    if (s < 5400) return Math.round(s / 60) + "m";
+    return Math.round(s / 3600) + "h";
+  }
+  function tierLabel(t) {
+    return t === "PRATYAKSA" ? "first-hand" : t === "ANUMANA" ? "inferred" : "relayed";
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  setConn("", "connecting…");
+  connect();
+})();
+</script>
+</body>
+</html>

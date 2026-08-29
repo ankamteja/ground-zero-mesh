@@ -61,6 +61,9 @@ dependencies {
     // Offline peer discovery + auto-upgraded data channel.
     implementation("com.google.android.gms:play-services-nearby:19.3.0")
 
+    // L3 responder gateway: tiny embedded HTTP server on the gateway phone.
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
