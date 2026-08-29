@@ -568,3 +568,36 @@ the board kept being served by a phone that was no longer the gateway.
   out until a device is available rather than guessed at.
 - The gateway's Wi-Fi hotspot cannot be opened programmatically without system permissions.
   The responder opens it by hand; documented, not automated.
+
+---
+
+## Store-and-forward, wired (Phase 12, device Step 5 stand-in)
+
+`StoreAndForward` had the same problem `DedupCluster.judge` did: it existed, it was swept
+every 30 seconds, and nothing ever put a frame in it or took one out. The buffer defended
+against a partition it could not actually survive.
+
+It is now filled from both directions — inbound frames that were *news* (duplicates are
+already in the outbox from the first time) and everything this node originates, which never
+passes through the receive path and is exactly what a peer arriving five minutes later most
+needs. `NearbyTransport.onPeerConnected` is the replay trigger: a reconnecting peer cannot
+ask for what it never heard, so the reconnect itself has to be the signal.
+
+Replay is `drainAll`, not per-zone. The buckets are keyed by hash and the plain zone tags are
+deliberately not kept, and a reconnecting peer has not said which zones it missed anyway. The
+receiver's gossip layer suppresses anything it already holds, so an over-generous replay
+costs one frame per report rather than a flood — asserted by a test that replays into a
+gateway which already has the incident and checks it is not counted twice.
+
+### What the stand-in test proves, and what it does not
+
+`MeshFieldSimulationTest` wires the same components the service wires — gossip, outbox,
+agent, the origin decorator — over `SimNetwork` in an A—B—C line where A and C cannot hear
+each other. It proves the mesh logic: one incident at the gateway, `effectiveTier = SABDA`
+two hops out, enrichment folded into the same incident, and a report that survives a
+partition and arrives on reconnect.
+
+It proves **nothing** about Nearby Connections: discovery, the per-API-level permission
+matrix, and the connection lifecycle are not exercised, and those are where the demo is most
+likely to die — a missing permission makes Nearby discover nothing and report no error. The
+three-phone run remains required before any demo.

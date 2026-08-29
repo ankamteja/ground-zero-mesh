@@ -4,6 +4,7 @@ import org.groundzero.mesh.agent.NodeAgent
 import org.groundzero.mesh.agent.SensoryWindow
 import org.groundzero.mesh.agent.SlmFeatureVector
 import org.groundzero.mesh.app.node.MeshRole
+import org.groundzero.mesh.app.transport.StoreAndForward
 import org.groundzero.mesh.gateway.RankedIncident
 import org.groundzero.mesh.gateway.ResponderRanking
 import org.groundzero.mesh.propagation.Envelope
@@ -34,21 +35,29 @@ object MeshStack {
     private var gossip: Gossip? = null
     private var agent: NodeAgent? = null
     private var clockMs: () -> Long = { System.currentTimeMillis() }
+    private var store: StoreAndForward? = null
     private var role: MeshRole = MeshRole.NODE
     private var roleListener: ((MeshRole) -> Unit)? = null
 
     val isInstalled: Boolean get() = synchronized(lock) { gossip != null }
 
-    fun install(gossip: Gossip, agent: NodeAgent, clockMs: () -> Long) = synchronized(lock) {
+    fun install(
+        gossip: Gossip,
+        agent: NodeAgent,
+        clockMs: () -> Long,
+        store: StoreAndForward? = null,
+    ) = synchronized(lock) {
         this.gossip = gossip
         this.agent = agent
         this.clockMs = clockMs
+        this.store = store
     }
 
     fun clear() = synchronized(lock) {
         gossip = null
         agent = null
         clockMs = { System.currentTimeMillis() }
+        store = null
         role = MeshRole.NODE
         roleListener = null
     }
@@ -80,9 +89,22 @@ object MeshStack {
         roleListener = listener
     }
 
-    /** A frame off the radio. Null when nothing is installed or the frame was a duplicate. */
+    /**
+     * A frame off the radio. Null when nothing is installed or the frame was a duplicate.
+     *
+     * A frame that was *news* is also buffered for replay: the node that is currently out of
+     * range is exactly the one that will need it, and it cannot ask for what it never heard.
+     * Duplicates are not buffered — they are already in the outbox from the first time.
+     */
     fun ingest(frame: ByteArray, from: NodeId?): Envelope? = synchronized(lock) {
-        gossip?.ingest(frame, from)
+        val envelope = gossip?.ingest(frame, from) ?: return null
+        store?.offer(envelope.addressZone, envelope.dedupKey, frame)
+        envelope
+    }
+
+    /** What to replay to a peer that just reconnected. Empty when nothing was buffered. */
+    fun bufferedFrames(): List<ByteArray> = synchronized(lock) {
+        store?.drainAll() ?: emptyList()
     }
 
     /**

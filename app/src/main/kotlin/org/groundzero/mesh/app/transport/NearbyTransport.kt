@@ -56,6 +56,9 @@ class NearbyTransport(
     private var listener: ((from: NodeId, frame: ByteArray) -> Unit)? = null
 
     @Volatile
+    private var peerConnected: ((NodeId) -> Unit)? = null
+
+    @Volatile
     private var running = false
 
     override fun start() {
@@ -100,6 +103,17 @@ class NearbyTransport(
     }
 
     override fun knownPeers(): List<NodeId> = endpointToNode.values.toList()
+
+    /**
+     * A peer just finished connecting.
+     *
+     * This is the store-and-forward moment: a node that was out of range for ten minutes
+     * comes back and needs what it missed, and nothing else in the stack knows when that
+     * happened.
+     */
+    fun onPeerConnected(listener: (NodeId) -> Unit) {
+        this.peerConnected = listener
+    }
 
     // --- Nearby plumbing ---
 
@@ -148,7 +162,10 @@ class NearbyTransport(
         override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
             if (result.status.isSuccess) {
                 val node = endpointToNode[endpointId]
-                if (node != null) peers.sawInbound(node, endpointId)
+                if (node != null) {
+                    peers.sawInbound(node, endpointId)
+                    peerConnected?.invoke(node)
+                }
             } else {
                 endpointToNode.remove(endpointId)?.let { nodeToEndpoint.remove(it) }
             }

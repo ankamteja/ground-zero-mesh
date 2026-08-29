@@ -1,6 +1,7 @@
 package org.groundzero.mesh.app.transport
 
 import org.groundzero.mesh.propagation.Codecs
+import org.groundzero.mesh.propagation.Envelope
 import org.groundzero.mesh.propagation.Gossip
 import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.transport.Transport
@@ -22,9 +23,17 @@ import org.groundzero.mesh.transport.Transport
 class GossipOriginTransport(
     private val delegate: Transport,
     private val gossip: Gossip,
+    /**
+     * Called with everything this node originates, so it can be buffered for replay. A
+     * victim's own SOS is the report a peer arriving five minutes later most needs, and it
+     * never passes through the receive path where inbound frames are buffered.
+     */
+    private val onOriginate: (Envelope, ByteArray) -> Unit = { _, _ -> },
 ) : Transport by delegate {
 
     override fun send(frame: ByteArray, to: NodeId?) {
-        gossip.originate(Codecs.forFrameBudget(delegate.maxFrameBytes).decode(frame))
+        val envelope = Codecs.forFrameBudget(delegate.maxFrameBytes).decode(frame)
+        gossip.originate(envelope)
+        onOriginate(envelope, frame)
     }
 }
