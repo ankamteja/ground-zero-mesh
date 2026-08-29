@@ -1,7 +1,9 @@
 package org.groundzero.mesh.app.node
 
 import org.groundzero.mesh.agent.AgentState
+import org.groundzero.mesh.app.mesh.MeshStack
 import org.groundzero.mesh.propagation.Severity
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -10,6 +12,12 @@ import org.junit.Test
 class NodeViewModelTest {
 
     private val vm = NodeViewModel(now = { 42L })
+
+    // NodeViewModel's default `initialRole` now reads MeshStack.currentRole() — without this,
+    // roleSwitchIsRuntime's MeshStack.setRole(GATEWAY) would leak into whichever test (in this
+    // class or another) constructs the next NodeViewModel() with default arguments.
+    @After
+    fun tearDown() = MeshStack.clear()
 
     @Test
     fun startsCalmWithNoSos() {
