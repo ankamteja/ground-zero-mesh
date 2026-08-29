@@ -54,6 +54,12 @@ object ClusterJson {
         // for "how far away" that a mesh with no GPS/RSSI ranging actually has. See the
         // localisation entry in TODO.md's open assumptions.
         num("minHops", c.minHops.toString()); append(',')
+        // A real device GPS fix, when the sender had one — never a fallback or an estimate,
+        // and distinct from both the hop-count proxy above and the schematic `position`
+        // below. Null (not omitted) when absent, matching `recommendedActionRank`'s and
+        // `floor`'s own null-vs-fake convention just below.
+        num("gpsLat", c.gpsLat?.let { gps(it) } ?: "null"); append(',')
+        num("gpsLon", c.gpsLon?.let { gps(it) } ?: "null"); append(',')
         // index+1 while inside the dispatch budget; null past it — still listed, not prioritised.
         num("recommendedActionRank", if (r.withinBudget) (index + 1).toString() else "null"); append(',')
         num("priority", trim(r.priority)); append(',')
@@ -119,4 +125,12 @@ object ClusterJson {
         val r = (d * 1000).toLong() / 1000.0
         return r.toString()
     }
+
+    /**
+     * Six decimal places (~11cm at the equator) rather than [trim]'s three (~111m) — the
+     * wire codec stores GPS as an exact `f32` specifically to avoid the feature vector's
+     * quantisation loss (see `CompactCodec`'s layout doc), and rounding it away here on the
+     * last hop to the dashboard would throw away the precision that survived the whole trip.
+     */
+    private fun gps(v: Float): String = String.format(java.util.Locale.ROOT, "%.6f", v)
 }

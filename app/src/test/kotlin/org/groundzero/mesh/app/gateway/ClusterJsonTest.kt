@@ -35,6 +35,8 @@ class ClusterJsonTest {
         flags: Byte = 0,
         vector: SlmFeatureVector? = null,
         reportCount: Int = relayers,
+        gpsLat: Float? = null,
+        gpsLon: Float? = null,
     ) = IncidentCluster(
         key = key,
         origin = NodeId(1L),
@@ -51,6 +53,8 @@ class ClusterJsonTest {
         featureVector = vector,
         firstHandHeld = firstHand,
         reportCount = reportCount,
+        gpsLat = gpsLat,
+        gpsLon = gpsLon,
     )
 
     private fun json(
@@ -184,6 +188,26 @@ class ClusterJsonTest {
 
         val withoutTwin = json(listOf(cluster("k-2", "floor-2-east", Severity.OTHER, danger = 0.6)))
         assertFalse("no twin passed in means no spatial fields, not fake ones", withoutTwin.contains("\"floor\":"))
+    }
+
+    @Test
+    fun emitsARealGpsFixAtFullPrecisionNotTrimmedLikeDangerScore() {
+        val j = json(
+            listOf(cluster("k-1", "z", Severity.OTHER, danger = 0.7, gpsLat = 12.971891f, gpsLon = 77.594623f)),
+        )
+        // Six decimal places, not trim()'s three — a wire codec that stores an exact f32
+        // specifically to avoid quantisation loss must not lose it again on this last hop.
+        // (77.594623 as an f32 bit pattern rounds to ...620 at six decimals — that is the
+        // real precision an f32 carries, not a bug in this assertion.)
+        assertTrue(j.contains("\"gpsLat\":12.971891"))
+        assertTrue(j.contains("\"gpsLon\":77.594620"))
+    }
+
+    @Test
+    fun emitsNullGpsRatherThanOmittingTheFieldWhenThereIsNoFix() {
+        val j = json(listOf(cluster("k-1", "z", Severity.OTHER, danger = 0.7)))
+        assertTrue(j.contains("\"gpsLat\":null"))
+        assertTrue(j.contains("\"gpsLon\":null"))
     }
 
     @Test

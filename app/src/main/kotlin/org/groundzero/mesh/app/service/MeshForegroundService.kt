@@ -19,6 +19,7 @@ import org.groundzero.mesh.app.transport.GossipOriginTransport
 import org.groundzero.mesh.app.transport.NearbyTransport
 import org.groundzero.mesh.app.node.MeshRole
 import org.groundzero.mesh.app.node.RoleStore
+import org.groundzero.mesh.app.sensors.GpsBridge
 import org.groundzero.mesh.app.sensors.SensorBridge
 import org.groundzero.mesh.app.transport.StoreAndForward
 import org.groundzero.mesh.propagation.Gossip
@@ -45,6 +46,7 @@ class MeshForegroundService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var transport: NearbyTransport? = null
     private var sensors: SensorBridge? = null
+    private var gps: GpsBridge? = null
     val storeAndForward = StoreAndForward()
 
     private val maintenance = object : Runnable {
@@ -103,6 +105,7 @@ class MeshForegroundService : Service() {
         radio.start()
 
         sensors = SensorBridge(this, handler)
+        gps = GpsBridge(this) { lat, lon -> MeshStack.updateGpsFix(lat, lon) }
         // Restore the role the responder had picked before this instance existed — MeshStack
         // otherwise comes up as NODE regardless of what the (possibly still-running) UI shows.
         MeshStack.setRole(RoleStore.get(this))
@@ -137,18 +140,37 @@ class MeshForegroundService : Service() {
      * the mesh.
      */
     private fun applyRole(role: MeshRole) {
-        if (role == MeshRole.NODE) sensors?.start() else sensors?.stop()
+        if (role == MeshRole.NODE) {
+            sensors?.start()
+            gps?.start()
+        } else {
+            sensors?.stop()
+            gps?.stop()
+        }
         RoleStore.set(this, role)
         Log.i(TAG, "role is now $role")
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    /**
+     * Also the retry point for a GPS permission granted after the service was already
+     * running: [GpsBridge.start] silently did nothing the first time if the permission was
+     * missing, and `MeshForegroundService.start(context)` is exactly what the victim
+     * screen's own permission-grant callback calls (mirroring the same nudge
+     * `MainActivity` already does for the Nearby permissions) — so `onStartCommand` runs
+     * again and gets another shot at it. Cheap: [GpsBridge.start] no-ops if already running.
+     */
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (MeshStack.currentRole() == MeshRole.NODE) gps?.start()
+        return START_STICKY
+    }
 
     override fun onDestroy() {
         handler.removeCallbacks(maintenance)
         handler.removeCallbacks(heartbeat)
         sensors?.stop()
         sensors = null
+        gps?.stop()
+        gps = null
         MeshStack.onRoleChange(null)
         MeshStack.clear()
         transport?.stop()

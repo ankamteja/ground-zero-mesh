@@ -41,4 +41,17 @@ object MeshPermissions {
         }
 
     fun allGranted(context: Context): Boolean = missing(context).isEmpty()
+
+    /**
+     * Deliberately separate from [runtimePermissions]. That list gates whether the mesh
+     * starts at all; this one gates only whether an SOS carries a coordinate. Folding
+     * [LOCATION_PERMISSION] into [runtimePermissions] would make GPS a hard requirement to
+     * use the mesh, which the feature's own design — "GPS when available, honestly
+     * nullable, never required" (see the GPS ledger entry in `docs/architecture.md`) —
+     * exists specifically to avoid. See `sensors/GpsBridge.kt` for the consumer.
+     */
+    const val LOCATION_PERMISSION = Manifest.permission.ACCESS_FINE_LOCATION
+
+    fun locationGranted(context: Context): Boolean =
+        ContextCompat.checkSelfPermission(context, LOCATION_PERMISSION) == PackageManager.PERMISSION_GRANTED
 }

@@ -332,6 +332,8 @@ class NodeAgent(
         peers = transport.knownPeers().take(Envelope.MAX_PEERS),
         hops = 0,
         ttl = ttl,
+        gpsLat = lastGpsFix?.lat,
+        gpsLon = lastGpsFix?.lon,
     )
 
     private fun emit(envelope: Envelope): Envelope {

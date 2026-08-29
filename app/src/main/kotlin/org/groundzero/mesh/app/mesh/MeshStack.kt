@@ -187,6 +187,16 @@ object MeshStack {
     /** True while the post-SOS window is still open and unenriched. */
     fun sensoryWindowOpen(): Boolean = synchronized(lock) { agent?.sensoryWindowOpen() == true }
 
+    /**
+     * A GPS fix from the platform layer, whenever one arrives. See
+     * [org.groundzero.mesh.app.sensors.GpsBridge]. A no-op while nothing is installed — same
+     * shape as [senseVector], which the agent may simply not have yet.
+     */
+    fun updateGpsFix(lat: Float, lon: Float) = synchronized(lock) {
+        agent?.updateGpsFix(lat, lon)
+        Unit
+    }
+
     /** Stage 3: hand the window's evidence to the agent for the enriched re-broadcast. */
     fun completeSensoryWindow(window: SensoryWindow): Envelope? = synchronized(lock) {
         agent?.completeSensoryWindow(window)

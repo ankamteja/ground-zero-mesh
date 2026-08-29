@@ -212,6 +212,22 @@ class MeshStackTest {
     }
 
     @Test
+    fun `a GPS fix reaches the agent through the stack`() {
+        install()
+        MeshStack.updateGpsFix(12.9716f, 77.5946f)
+
+        val envelope = MeshStack.raiseSos(Severity.DROWNING_IMMINENT)
+
+        assertEquals(12.9716f, envelope?.gpsLat)
+        assertEquals(77.5946f, envelope?.gpsLon)
+    }
+
+    @Test
+    fun `a GPS fix on an uninstalled stack is a safe no-op`() {
+        MeshStack.updateGpsFix(12.9716f, 77.5946f)
+    }
+
+    @Test
     fun `clear leaves the stack inert again`() {
         install()
         MeshStack.raiseSos(Severity.DROWNING_IMMINENT)

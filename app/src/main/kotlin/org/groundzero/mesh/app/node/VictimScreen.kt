@@ -1,5 +1,8 @@
 package org.groundzero.mesh.app.node
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,9 +23,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.groundzero.mesh.app.permissions.MeshPermissions
+import org.groundzero.mesh.app.service.MeshForegroundService
 import org.groundzero.mesh.propagation.Severity
 
 /**
@@ -68,6 +74,33 @@ fun VictimScreen(vm: NodeViewModel, modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
             )
+        }
+
+        // Separate from the Nearby permission grant on purpose — see MeshPermissions.
+        // LOCATION_PERMISSION. Nothing about sending an SOS should ever depend on this;
+        // it only decides whether the SOS carries a coordinate alongside it.
+        val context = LocalContext.current
+        var locationGranted by remember { mutableStateOf(MeshPermissions.locationGranted(context)) }
+        val locationRequester = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { grantedNow ->
+            locationGranted = grantedNow
+            // Mirrors MainActivity's own post-grant nudge for the Nearby permissions: the
+            // service may already be running with its GPS bridge dormant, and this is what
+            // gives it another look — see MeshForegroundService.onStartCommand.
+            if (grantedNow) MeshForegroundService.start(context)
+        }
+        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
+            Text(
+                if (locationGranted) "Location: on — a GPS fix rides on the SOS when one is available"
+                else "Location: off — the SOS still sends, with no coordinate",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (!locationGranted) {
+                TextButton(onClick = { locationRequester.launch(Manifest.permission.ACCESS_FINE_LOCATION) }) {
+                    Text("Add GPS")
+                }
+            }
         }
 
         HorizontalDivider()

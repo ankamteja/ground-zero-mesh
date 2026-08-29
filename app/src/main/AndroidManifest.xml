@@ -13,8 +13,13 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" android:maxSdkVersion="28" />
 
-    <!-- Location was required by Nearby for BLE scans on API 29..31; not needed from 32+ -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="31" />
+    <!--
+      Nearby needed this for BLE scans on API 29..31 only; that's why a maxSdkVersion cap used
+      to sit here. Now requested unconditionally for the separate, optional GPS-on-SOS feature
+      (see permissions/MeshPermissions.kt's LOCATION_PERMISSION and sensors/GpsBridge.kt) — a
+      fix is never required to use the mesh, only to attach a coordinate to one's own SOS.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <!-- 12+ (API 31+) -->
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" tools:targetApi="s" />

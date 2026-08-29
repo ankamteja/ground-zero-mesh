@@ -104,6 +104,7 @@
   .incident .sev { margin-left: auto; font-size: 11px; color: var(--dim); }
   .incident .meta { display: flex; justify-content: space-between; color: var(--dim); font-size: 11px; }
   .unplaced-tag { color: var(--unplaced); }
+  .gps-tag { color: var(--accent); font-weight: 600; }
 
   .empty { color: var(--dim); }
 
@@ -363,7 +364,8 @@
         '<span class="meta">' +
           '<span>' + esc(c.zone) + (c.placed ? " · " + esc(c.floorLabel) : '') +
             (c.placed ? "" : ' <span class="unplaced-tag">unplaced</span>') + '</span>' +
-          '<span>' + hopsLabel(c.minHops) + ' &middot; ' + c.flags + '</span>' +
+          '<span>' + hopsLabel(c.minHops) + ' &middot; ' + c.flags +
+            (c.gpsLat != null ? ' <span class="gps-tag" title="a real GPS fix rode with this report">GPS</span>' : '') + '</span>' +
         '</span>' +
       '</button>';
     }).join("");
@@ -405,6 +407,7 @@
       '<div class="row"><span>danger score</span><span>' + pct(c.dangerScore) + '</span></div>' +
       '<div class="row"><span>corroboration</span><span>×' + c.corroboration + '</span></div>' +
       '<div class="row"><span title="No GPS or RSSI ranging — this is how many relay hops the closest report ever took, the one distance signal this mesh actually has.">distance (hops)</span><span>' + hopsLabel(c.minHops) + '</span></div>' +
+      gpsRow(c) +
       '<div class="row"><span>last seen</span><span>' + ago(c.lastSeenSecondsAgo) + '</span></div>' +
       '<div class="row"><span>position</span><span>' + (c.placed ? esc(c.floorLabel) + " (schematic)" : "unplaced") + '</span></div>' +
 
@@ -465,6 +468,18 @@
   /** No GPS/RSSI ranging exists — hop count is the one honest distance proxy this mesh has. */
   function hopsLabel(n) {
     return n === 0 ? "in range" : n + " hop" + (n === 1 ? "" : "s") + " away";
+  }
+  /**
+   * A real device fix, when the sender had one — deliberately captioned apart from both
+   * "distance (hops)" above and the schematic 3D "position" below, so the three "where"
+   * signals this board can show are never read as one thing. `geo:` rather than a rendered
+   * map: offline-safe, opens in whatever maps app the responder already has.
+   */
+  function gpsRow(c) {
+    var value = (c.gpsLat != null && c.gpsLon != null)
+      ? '<a href="geo:' + c.gpsLat + ',' + c.gpsLon + '">' + c.gpsLat.toFixed(5) + ', ' + c.gpsLon.toFixed(5) + '</a>'
+      : '<span class="empty">none — indoors, no signal, or not granted</span>';
+    return '<div class="row"><span title="A real GPS fix taken on the reporting device, when one was available — never a fallback or an estimate, and separate from the schematic 3D position and the hop-count distance above.">GPS fix</span><span>' + value + '</span></div>';
   }
   function esc(s) {
     return String(s).replace(/[&<>"]/g, function (c) {

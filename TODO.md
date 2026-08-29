@@ -108,24 +108,25 @@ Tick items in the same PR that does the work.
       on `finish()`, which never fires for `/events`' intentionally-never-closing SSE
       stream, so the dashboard connected and then silently never updated. Disabled gzip
       server-wide via `GatewayServer.useGzipWhenAccepted`.
-- [ ] `[A]`/`[B]` **GPS location, in progress, not committed.** `core` now supports an
-      optional, nullable GPS fix end to end — `Envelope.gpsLat`/`gpsLon`, `CompactCodec`
-      wire format bumped to `0x03` (8 bytes, real f32, no quantisation), `JsonCodec`,
-      `IncidentCluster` merge (`envelope.gpsLat ?: existing.gpsLat`, same rule as
-      `slmSummary`), and `NodeAgent.updateGpsFix`/`lastGpsFix` (mirrors the existing
-      `lastVector` pattern — `raiseSos` never waits on a fix). All tested and green. **But
-      `NodeAgent.buildEnvelope` does not yet read `lastGpsFix`, so nothing reaches the
-      wire** — the exact "wired but not consumed" bug this whole audit exists to catch, in
-      the one place it's honest to say so about itself. Nothing on the `app` side calls
-      `updateGpsFix` yet either; `ACCESS_FINE_LOCATION` in the manifest is currently capped
-      `maxSdkVersion="31"` (a leftover from Nearby's old BLE-scan permission history) and
-      needs that cap removed for a real fix on API 32+. See `HANDOFF.md` for the exact
-      stopping point and everything still needed (location source decision, `ClusterJson`,
-      dashboard UI, fixtures). Chosen approach, confirmed with the user: GPS **when
-      available, honestly nullable** — never required, never fabricated, falls back to the
-      zone tag / hop count. Reasoning: GPS fails exactly where victims usually are — indoors,
-      trapped, underground — so a sometimes-null-sometimes-wrong location field is worse
-      than none, because a responder trusts a number on a screen.
+- [x] `[A]`/`[B]` **GPS location — landed end to end.** `core`: `Envelope.gpsLat`/`gpsLon`,
+      `CompactCodec` wire format `0x03` (8 bytes, real f32, no quantisation), `JsonCodec`,
+      `IncidentCluster` merge (`envelope.gpsLat ?: existing.gpsLat`), `NodeAgent.
+      updateGpsFix`/`lastGpsFix`/`buildEnvelope`. `app`: `GpsBridge` (new — `LocationManager
+      .GPS_PROVIDER` only, no network-location fallback, no new Gradle dependency), `MeshStack
+      .updateGpsFix` passthrough, `MeshForegroundService` wiring (incl. the permission-
+      granted-after-service-already-running retry via `onStartCommand`), `MeshPermissions
+      .LOCATION_PERMISSION` (deliberately separate from `runtimePermissions()` — GPS is
+      optional, Nearby is not), `VictimScreen`'s own grant UI, `AndroidManifest.xml`'s
+      `ACCESS_FINE_LOCATION` cap removed, `ClusterJson` + dashboard rendering (a captioned
+      "GPS fix" Inspector row with a `geo:` link, a board-row tag), `fixtures.json` sample
+      data. Chosen approach, confirmed with the user: GPS **when available, honestly
+      nullable** — never required, never fabricated, falls back to the zone tag / hop count.
+      Reasoning: GPS fails exactly where victims usually are — indoors, trapped, underground
+      — so a sometimes-null-sometimes-wrong location field is worse than none, because a
+      responder trusts a number on a screen. See the GPS ledger entry in
+      `docs/architecture.md` for the full landing. **Not yet verified on a real device or
+      compiled in CI** — this environment has no Android SDK configured; `core` is tested
+      and green, the `app`-side changes are reviewed but unbuilt.
 - [ ] `[B]` **3D dashboard camera centers wrong, reported not investigated.** User, verbatim:
       "in ui its centering to someother place and not to responders node." Likely the
       canvas renderer's initial orbit target/pan origin (the `camera` object in
@@ -134,11 +135,11 @@ Tick items in the same PR that does the work.
 
 ## Open assumptions (name them in the deck and in UI copy)
 
-- **Localisation is not solved.** No coordinate / RSSI / trilateration code exists in the
-  shipped app path. The cluster key is a coarse proxy — zone tag, RSSI ordering,
-  hop-distance, or a responder-entered zone. `core`'s wire format now *supports* an
-  optional real GPS fix (see the follow-up above) but nothing captures or sends one yet —
-  this line stays true until that lands end to end, not just in `core`.
+- **Localisation is mostly not solved.** No RSSI / trilateration code exists anywhere. A
+  real, optional GPS fix now captures and sends end to end (see the follow-up above) — when
+  one is available. It stays the minority case by design: GPS fails exactly where victims
+  usually are (indoors, trapped, underground), so the zone tag / hop-distance proxy remains
+  the primary signal for most incidents, not a fallback for a feature that mostly works.
 - **Battery.** Continuous advertise + scan over 24–30h is real drain. Duty-cycling is a documented trade-off, not a solved number.
 
 ## Docs

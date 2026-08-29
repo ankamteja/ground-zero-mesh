@@ -1,8 +1,20 @@
-# Handoff — GPS location feature (in progress) + one open bug
+# Handoff — GPS location feature (landed end to end) + one open bug
 
-Written mid-session, stopped on request. `core` is green and compiles; this is a snapshot
-of exactly where the GPS feature stops, plus one unrelated UI bug reported but not yet
-investigated. Not committed — working tree has the `core` changes below, uncommitted.
+Written mid-session, stopped on request, then committed and pushed to `main` as `c981f38`
+(`feat: GPS wire-format support (core only, not wired to a sender yet)`) — **since
+resumed twice**: `NodeAgent.buildEnvelope` now reads `lastGpsFix` (see "Closed" below), and
+everything under the old "Not started at all" section has since landed too — app-side
+capture, permissions, `MeshStack` passthrough, `ClusterJson`, dashboard rendering,
+fixtures. See the GPS ledger entry in `docs/architecture.md` for the full account; this
+file is kept for the original session narrative below, not as the live status any more.
+Also since this was written: `3c65715` (`fix: mesh service never started after granting
+permissions in-app`), a `MainActivity` fix from a collaborator, landed on `main` first and
+was merged in cleanly before any of the above — no collision, but worth knowing the GPS
+grant UI added to `VictimScreen` mirrors that exact fix's nudge pattern on purpose.
+
+**Not yet done:** verified on a real device, or compiled at all — this environment has no
+Android SDK configured, so `core` is tested and green but the `app`-side GPS changes are
+reviewed, not built. Do that first when a device/SDK is available.
 
 ## Decision made (user, confirmed)
 
@@ -42,54 +54,38 @@ comments).
   that true without any signature change to `raiseSos`/`heartbeatTick`/
   `completeSensoryWindow`.
 
-## Stopped here — the actual gap
+## Closed — `NodeAgent.buildEnvelope()` now reads `lastGpsFix`
 
-**`NodeAgent.buildEnvelope()` does not yet pass `gpsLat`/`gpsLon` through to the
-`Envelope(...)` it constructs.** `lastGpsFix` is tracked but never read. This is a
-two-line fix:
+Was: tracked but never read, so `core` silently dropped any fix an app ever provided.
+Fixed with the two-line change this section originally specified; `NodeAgentTest` now has
+`a GPS fix taken before the SOS reaches the broadcast envelope` and `no GPS fix means the
+envelope honestly carries none`. `./gradlew :core:test` green.
 
-```kotlin
-private fun buildEnvelope(
-    ...
-) = Envelope(
-    ...
-    gpsLat = lastGpsFix?.lat,
-    gpsLon = lastGpsFix?.lon,
-)
-```
+## Closed — everything that was "Not started at all"
 
-Do this first when resuming — everything above is dead weight until this line exists, and
-`core` currently silently drops any fix an app ever provides.
-
-## Not started at all
-
-1. **App-side capture.** Nothing calls `NodeAgent.updateGpsFix` yet. Needs:
-   - `ACCESS_FINE_LOCATION` in `AndroidManifest.xml` currently reads
-     `android:maxSdkVersion="31"` (it was only there for Nearby's old BLE-scan permission
-     history, pre-API-32). **That cap needs removing** for a real GPS feature to work on
-     API 32+, or the fix should be requested through a separate flow — decide which.
-   - A location source: `android.location.LocationManager` (no new Gradle dependency,
-     already in the Android SDK) vs `com.google.android.gms:play-services-location`
-     (`FusedLocationProviderClient`, more accurate/battery-friendly, but a new dependency —
-     the app already depends on Nearby's Play Services artifact, so this isn't
-     unprecedented, but is a build-system change worth flagging, not silently adding).
-   - Wire it into `MeshForegroundService`/`SensorBridge` (wherever the sensing tickers
-     live) calling `agent.updateGpsFix(lat, lon)` on each location update — permission
-     runtime request UI TBD (`MeshPermissions.kt` is the existing pattern to extend).
-2. **`ClusterJson.kt`** — no `gpsLat`/`gpsLon` fields yet in the dashboard JSON.
-3. **Dashboard UI** (`assets/dashboard/index.html`) — no rendering. Suggested (not started):
-   a labelled row in the Inspector, likely a `<a href="geo:lat,lon">` link so a responder
-   can open it in whatever maps app they have, offline-safe (we just supply the
-   coordinate, not a map render). Caption it clearly as "GPS fix" distinct from the
-   schematic 3D view / hop-count distance, so the three "where" signals (schematic
-   position, hop count, real GPS) are never conflated.
-4. **`fixtures.json`** — no GPS values added to the preview data.
-5. **`docs/architecture.md`** — no ledger entry logging this yet (matches the file's own
-   "log every ported formula/mechanism as it lands" rule — do this once the feature is
-   actually wired end to end, not before).
-6. **`TODO.md`** — the "Localisation is not solved" open-assumption line should probably
-   get a note that a real (optional, nullable) GPS fix now exists alongside the zone-tag/
-   hop-count proxies, once shipped.
+1. **App-side capture — `GpsBridge` (new).** `LocationManager.GPS_PROVIDER` only, no new
+   Gradle dependency (decided against `FusedLocationProviderClient` — not needed, keeps the
+   footprint minimal), never `NETWORK_PROVIDER` (would violate "never a fallback or an
+   estimate"). Mirrors `SensorBridge`'s start/stop-on-`MeshRole.NODE` shape and its "do
+   nothing, don't throw, when the precondition is missing" contract for a missing
+   permission. `AndroidManifest.xml`'s `ACCESS_FINE_LOCATION` `maxSdkVersion="31"` cap is
+   removed. Permission is requested through a **separate flow**, not folded into
+   `MeshPermissions.runtimePermissions()` — see `MeshPermissions.LOCATION_PERMISSION` and
+   `VictimScreen`'s own "Add GPS" button/launcher. Wired into `MeshForegroundService`
+   alongside `SensorBridge`, including a retry path (`onStartCommand`) for a permission
+   granted after the service is already running.
+2. **`ClusterJson.kt`** — emits `gpsLat`/`gpsLon`, `null` when absent, six-decimal
+   precision (not the three decimals every other numeric field gets — see the ledger entry
+   for why).
+3. **Dashboard UI** — built as suggested: a captioned "GPS fix" Inspector row with a
+   `geo:lat,lon` link, distinct from hop-count and the schematic position, plus a compact
+   board-row "GPS" tag.
+4. **`fixtures.json`** — two of eight clusters now carry a real fix; the rest explicit
+   `null`.
+5. **`docs/architecture.md`** — ledger entry updated with the full app-side landing.
+6. **`TODO.md`** — the GPS follow-up marked done; the "Localisation is not solved"
+   assumption reworded to "mostly not solved" now that a real fix exists for the minority
+   of incidents where GPS is available.
 
 ## Separate, unrelated: reported UI bug, not investigated
 

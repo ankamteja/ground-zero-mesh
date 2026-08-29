@@ -243,6 +243,29 @@ class NodeAgentTest {
         assertTrue(node.explain().reason.contains("override", ignoreCase = true))
     }
 
+    // ------------------------------------------------------------------------------ GPS
+
+    @Test
+    fun `a GPS fix taken before the SOS reaches the broadcast envelope`() {
+        val (node, _) = agent()
+        node.updateGpsFix(37.7749f, -122.4194f)
+
+        val envelope = node.raiseSos(Severity.DROWNING_IMMINENT)
+
+        assertEquals(37.7749f, envelope.gpsLat)
+        assertEquals(-122.4194f, envelope.gpsLon)
+    }
+
+    @Test
+    fun `no GPS fix means the envelope honestly carries none`() {
+        val (node, _) = agent()
+
+        val envelope = node.raiseSos(Severity.DROWNING_IMMINENT)
+
+        assertNull(envelope.gpsLat)
+        assertNull(envelope.gpsLon)
+    }
+
     // ------------------------------------------------------------------ the math engine
 
     @Test

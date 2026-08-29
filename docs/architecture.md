@@ -19,7 +19,7 @@ each entry also links to where the revision is logged.
 |---|---|---|---|
 | `DangerScore` EMA `alpha` | `0.35` | `DangerScore.DEFAULT_ALPHA` | "The Math Engine and the flag byte (Phase 8)" below |
 | `TrustConsensus` gain / loss | `+0.05` / `−0.35` | `TrustConsensus.TRUST_GAIN` / `TRUST_LOSS` | "Asymmetric trust decay (Phase 9)" below |
-| `CompactCodec` wire version | `0x03` | `CompactCodec.VERSION` | "GPS location: wire format landed, nothing sends one yet" below |
+| `CompactCodec` wire version | `0x03` | `CompactCodec.VERSION` | "GPS location: wire format landed, `core` now sends one" below |
 
 ---
 
@@ -767,7 +767,7 @@ un-expired frames under the same per-bucket lock `drainAll` and `sweep` already 
 
 ---
 
-## GPS location: wire format landed, nothing sends one yet (2026-08-30, in progress)
+## GPS location: wire format landed, `core` now sends one (2026-08-30, in progress)
 
 Requested directly: a device should be able to send a location with its SOS. The obvious
 version of that — always attach GPS — was pushed back on and revised with the user before
@@ -806,18 +806,69 @@ real fix, when present, is additional signal, not a replacement for them.
 All of the above is tested (`EnvelopeTest`, `CodecTest`, `DedupClusterTest` in
 `TrustAndClusterTest.kt`) and `./gradlew :core:test` is green.
 
-### Where it stops — deliberately flagged, not hidden
+### The gap closed (2026-08-30)
 
-**`NodeAgent.buildEnvelope` does not read `lastGpsFix`.** Every envelope this agent builds
-today carries `gpsLat = null, gpsLon = null` regardless of what `updateGpsFix` was ever
-told — the exact "component exists, is tested in isolation, but nothing in production
-calls it" pattern the Part-II audit (see the top of this file's git history / `TODO.md`)
-was built to catch. Recorded here instead of silently left for someone to rediscover.
+`NodeAgent.buildEnvelope` now reads `lastGpsFix` — `gpsLat = lastGpsFix?.lat, gpsLon =
+lastGpsFix?.lon` — so a fix set via `updateGpsFix` before `raiseSos`/`heartbeatTick`/
+`completeSensoryWindow` actually reaches the envelope those calls build, instead of being
+tracked and silently dropped. Two new `NodeAgentTest` cases cover it directly: a fix taken
+before the SOS lands on the broadcast envelope, and no fix means the envelope honestly
+carries none. `./gradlew :core:test` is green.
 
-Nothing on the `app` side calls `updateGpsFix` at all yet: no location source is wired,
-`ClusterJson` does not emit the fields, the dashboard does not render them, and
-`AndroidManifest.xml`'s `ACCESS_FINE_LOCATION` is still capped `maxSdkVersion="31"` — a
-leftover from when it existed only for Nearby's old BLE-scan permission history, not for
-an actual GPS read. That cap needs removing (or a separate permission decision made) before
-a fix can be requested on API 32+. See `TODO.md`'s follow-ups and `HANDOFF.md` (repo root,
-uncommitted, written for exactly this handoff) for the complete remaining list.
+### The app side landed too (2026-08-30)
+
+**Location source: `LocationManager.GPS_PROVIDER` only, no new dependency.** Not
+`FusedLocationProviderClient` — the app already depends on `play-services-nearby`, so a
+second Play Services artifact would not have been unprecedented, but the in-SDK API needed
+nothing new added to the build and keeps the feature's footprint to what it actually
+requires. Deliberately not `NETWORK_PROVIDER` either, at any point: cell/Wi-Fi positioning
+can be off by hundreds of meters to kilometers, which is exactly the fabricated precision
+`Envelope.gpsLat`'s own doc comment rules out.
+
+- **`GpsBridge`** (new, `app/.../sensors/`) — mirrors `SensorBridge`'s shape on purpose:
+  same start/stop lifecycle tied to `MeshRole.NODE`, same "push whatever arrives, never
+  block anything on it" contract. `start()` checks `ACCESS_FINE_LOCATION` itself and does
+  nothing when it's missing, rather than throwing — the same honesty `SensorBridge` shows
+  when there's no light sensor.
+- **`MeshStack.updateGpsFix(lat, lon)`** — the passthrough that didn't exist before;
+  `NodeAgent` lives behind `MeshStack`'s lock, so the platform layer had no legal way to
+  reach `lastGpsFix` without it.
+- **`MeshForegroundService`** wires `GpsBridge` in alongside `SensorBridge` in `onCreate`/
+  `applyRole`/`onDestroy`. Also fixes the retry gap for a permission granted *after* the
+  service is already running: `onStartCommand` now calls `gps?.start()` unconditionally
+  when the role is `NODE` — cheap, since `GpsBridge.start()` no-ops once already running —
+  and `MeshForegroundService.start(context)` (which triggers `onStartCommand`) is exactly
+  what the new grant callback below calls.
+- **`MeshPermissions.LOCATION_PERMISSION`** — deliberately **not** folded into
+  `runtimePermissions()`. That list gates whether the mesh starts at all; bundling GPS into
+  it would make a coordinate a hard requirement to send an SOS, directly contradicting
+  "honestly nullable, never required." `AndroidManifest.xml`'s `ACCESS_FINE_LOCATION` cap
+  (`maxSdkVersion="31"`, a Nearby BLE-scan leftover) is removed — it now applies
+  unconditionally, since the GPS feature needs it on every API level Nearby didn't.
+- **`VictimScreen`** — a small "Location: on/off" row with its own "Add GPS" button and its
+  own permission launcher, independent of the Nearby grant flow in `MainActivity`. Granting
+  it calls `MeshForegroundService.start(context)`, the same nudge pattern `MainActivity`
+  already uses after its own permission grant.
+- **`ClusterJson`** — emits `gpsLat`/`gpsLon`, `null` (not omitted) when absent, matching
+  `recommendedActionRank`'s and `floor`'s own convention. Six decimal places, not the
+  `trim()` three decimals every other numeric field gets — the wire codec stores GPS as an
+  exact `f32` specifically to avoid quantisation loss, and rounding it away on this last hop
+  to the dashboard would throw away precision that survived the whole trip.
+- **`assets/dashboard/index.html`** — a captioned "GPS fix" row in the Inspector, separate
+  from "distance (hops)" and the schematic `position`, with a `geo:lat,lon` link (offline-
+  safe — opens in whatever maps app the responder already has, no rendered map shipped).
+  A compact "GPS" tag on the board row itself for at-a-glance triage.
+- **`fixtures.json`** — two of eight preview clusters now carry a real fix, the rest
+  explicit `null`, so the "present" and "honestly absent" rendering paths are both visible
+  without a live phone.
+
+Tested: `MeshStackTest`'s two new `updateGpsFix` cases, `ClusterJsonTest`'s two new
+precision/null cases. `GpsBridge` itself is not unit tested — same as `SensorBridge`, whose
+Android-framework dependency has never had a `SensorBridgeTest`; this project has no
+Robolectric, and the app module could not be compiled in this environment either (no
+Android SDK configured) — flagging rather than silently claiming a build was verified here.
+
+### What's still open
+
+The 3D-dashboard camera-centering bug (reported, not investigated — see `TODO.md`). No
+other GPS follow-up remains from the original ledger entry above.
