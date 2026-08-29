@@ -133,8 +133,14 @@ object DigitalTwin {
             )
         }
 
+        // corroborators is "every peer that ever handed us this report" — for a direct
+        // victim -> responder link with no relay in between, that peer is the origin
+        // itself. corroborationCount already excludes it (see IncidentCluster); the link
+        // list must too, or the view draws the victim a second time as their own carrier.
         val links = board.flatMap { ranked ->
-            ranked.cluster.corroborators.map { TwinLink(it, ranked.cluster.key) }
+            ranked.cluster.corroborators
+                .filter { it != ranked.cluster.origin }
+                .map { TwinLink(it, ranked.cluster.key) }
         }
 
         val floors = nodes.map { it.floor }.distinctBy { it.index }.sortedBy { it.index }
