@@ -601,3 +601,34 @@ It proves **nothing** about Nearby Connections: discovery, the per-API-level per
 matrix, and the connection lifecycle are not exercised, and those are where the demo is most
 likely to die — a missing permission makes Nearby discover nothing and report no error. The
 three-phone run remains required before any demo.
+
+---
+
+## The simulation dashboard (Phase 13)
+
+`docs/simulation_dashboard.html` renders the Digital Twin: floor slabs, incident markers with
+transmit pulses, carried-by edges with a packet running along them, a flag-byte bit
+inspector, the 16-float `v_SLM` bars, the ranking reasons, and the Radmin advisory.
+
+**It is not Three.js, and that is a deviation from the plan.** The page has to open with no
+build step, no CDN and no network — a perimeter station has none of those — which leaves
+vendoring ~600 KB of minified library into a repository that otherwise carries no runtime
+dependency at all. What the scene needs is a perspective projection, painter's-algorithm
+sorting and orbit controls; that is about 120 lines of canvas 2D, and it is in the file.
+
+Data comes from `simulation-twin.json` (written by `:core:runSim --json`) over HTTP, with the
+last generated snapshot embedded in the page as a fallback so it also works opened straight
+off disk, where `fetch` is blocked by the `file://` origin.
+
+### Two things the rendering had to get right
+
+- **The pitch sign.** With it inverted, nearer geometry renders *higher*, so a casualty on
+  floor 2 drew above one on the roof. It looked plausible and was wrong in the one way that
+  matters on a rescue board.
+- **Ground stems.** Even with correct perspective, depth alone is ambiguous: a nearer marker
+  can sit above a further one that is genuinely higher. Every marker drops a dashed stem to
+  the ground plane so the floor it stands on is unambiguous.
+
+Unplaced incidents render in a different colour, labelled `UNPLACED`, parked clear of the
+building — the same honesty rule the model enforces. Carriers sit on a ring outside the
+building labelled *position unknown*, because that is exactly what is known about them.

@@ -1,0 +1,55 @@
+{
+  "nowMs": 1756400001680,
+  "schematic": true,
+  "nodes": [
+    {
+      "key": "0000-0000-000a@1756400000",
+      "origin": "0000-0000-000a",
+      "zone": "sector-7-roof",
+      "floor": 3,
+      "floorLabel": "roof",
+      "placed": true,
+      "position": { "x": -7.970, "y": 9.000, "z": -0.697 },
+      "severity": "DROWNING_IMMINENT",
+      "risk": 1.0000,
+      "flags": 117,
+      "flagsHex": "0x75",
+      "evidence": ["manual SOS","rushing water","pinned","enclosed / dark","enriched"],
+      "corroborators": 0,
+      "firstHandHeld": false,
+      "ageMs": 0,
+      "standing": "SINGLE_UNCONFIRMED",
+      "dispatchable": true,
+      "priority": 0.7500,
+      "reasons": ["drowning imminent — minutes, not hours","single unconfirmed report","nearest report 2 hop(s) away in sector-7-roof","last heard 0s ago","on-device summary: VIS:ENCLOSED|AUDIO:RUSHING_WATER|IMU:PINNED"],
+      "vector": [0.9500,0.0000,0.4000,0.0000,0.8800,0.0000,0.0000,0.0000,0.9600,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000]
+    },
+    {
+      "key": "0000-0000-000d@1756400001",
+      "origin": "0000-0000-000d",
+      "zone": "floor-2-east",
+      "floor": 2,
+      "floorLabel": "floor 2",
+      "placed": true,
+      "position": { "x": -0.697, "y": 6.000, "z": -7.970 },
+      "severity": "STRUCTURAL_ENTRAPMENT",
+      "risk": 1.0000,
+      "flags": 116,
+      "flagsHex": "0x74",
+      "evidence": ["manual SOS","pinned","enclosed / dark","enriched"],
+      "corroborators": 0,
+      "firstHandHeld": false,
+      "ageMs": 20,
+      "standing": "SINGLE_UNCONFIRMED",
+      "dispatchable": true,
+      "priority": 0.6000,
+      "reasons": ["structural entrapment","single unconfirmed report","nearest report 2 hop(s) away in floor-2-east","last heard 0s ago","on-device summary: VIS:ENCLOSED|IMU:PINNED"],
+      "vector": [0.0000,0.0000,0.0000,0.0000,0.7000,0.0000,0.0000,0.0000,0.9000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000]
+    }
+  ],
+  "links": [
+    { "carrier": "0000-0000-000b", "incidentKey": "0000-0000-000a@1756400000" },
+    { "carrier": "0000-0000-000b", "incidentKey": "0000-0000-000d@1756400001" }
+  ],
+  "advisory": "2 incidents within dispatch capacity.\n1 drowning-imminent — these outrank everything else regardless of how confident the other reports are.\nTop of board: 0000-0000-000a at sector-7-roof, roof. Evidence: manual SOS, rushing water, pinned, enclosed / dark, enriched. single unconfirmed, 0 corroborating relays.\n2 report(s) are single-sourced and uncorroborated.\nAdvisory only. Ordering above was decided by the deterministic ranker; nothing here changed it."
+}
