@@ -2,7 +2,9 @@ package org.groundzero.mesh.gateway
 
 import org.groundzero.mesh.propagation.FirstHandGate
 import org.groundzero.mesh.propagation.IncidentCluster
+import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.propagation.Severity
+import org.groundzero.mesh.propagation.TrustConsensus
 
 /**
  * One row of the responder board.
@@ -56,12 +58,18 @@ object ResponderRanking {
         clusters: List<IncidentCluster>,
         nowMs: Long,
         budget: Int = BUDGET_ACTIONS,
+        /**
+         * Per-peer trust from the same [TrustConsensus] that judged these clusters'
+         * relayers. Defaults to neutral for callers with no trust state (tests, a fresh
+         * board) — corroboration then falls back to the old unweighted count.
+         */
+        trustOf: (NodeId) -> Double = { TrustConsensus.NEUTRAL_TRUST },
     ): List<RankedIncident> {
         val ordered = clusters.sortedWith(
             compareBy<IncidentCluster> { it.severity.rank }
                 .thenBy { standingOrder(it) }
                 .thenByDescending { it.dangerScore }
-                .thenByDescending { it.corroborationCount }
+                .thenByDescending { trustWeightedCorroboration(it, trustOf) }
                 .thenBy { it.ageMs(nowMs) }
                 .thenBy { it.key },
         )
@@ -69,12 +77,24 @@ object ResponderRanking {
         return ordered.mapIndexed { index, cluster ->
             RankedIncident(
                 cluster = cluster,
-                priority = FirstHandGate.cappedPriority(cluster, rawPriority(cluster, nowMs)),
+                priority = FirstHandGate.cappedPriority(cluster, rawPriority(cluster, nowMs, trustOf)),
                 standing = FirstHandGate.standing(cluster),
                 withinBudget = index < budget,
                 reasons = reasonsFor(cluster, nowMs),
             )
         }
+    }
+
+    /**
+     * Corroboration is only as good as the corroborators. A relay [TrustConsensus] has
+     * already caught contradicting itself must not lift an incident the same way a relay
+     * that has only ever agreed does — otherwise the asymmetric decay (Phase 9) computes a
+     * number nothing downstream ever reads, which is the exact bug this closes.
+     */
+    private fun trustWeightedCorroboration(cluster: IncidentCluster, trustOf: (NodeId) -> Double): Double {
+        if (cluster.corroborators.isEmpty()) return 0.0
+        val averageTrust = cluster.corroborators.sumOf { trustOf(it) } / cluster.corroborators.size
+        return cluster.corroborationCount * averageTrust
     }
 
     /** Only the incidents a responder can actually act on right now. */
@@ -96,14 +116,14 @@ object ResponderRanking {
      * facts, for humans. Ranking on a float and displaying a different float is how a board
      * starts disagreeing with itself.
      */
-    private fun rawPriority(cluster: IncidentCluster, nowMs: Long): Double {
+    private fun rawPriority(cluster: IncidentCluster, nowMs: Long, trustOf: (NodeId) -> Double): Double {
         val severityTerm = when (cluster.severity) {
             Severity.DROWNING_IMMINENT -> 1.00
             Severity.STRUCTURAL_ENTRAPMENT -> 0.80
             Severity.OTHER -> 0.55
         }
         val knowledgeTerm = if (cluster.firstHandHeld) 1.0 else 0.75
-        val corroborationTerm = 1.0 + (0.05 * cluster.corroborationCount).coerceAtMost(0.15)
+        val corroborationTerm = 1.0 + (0.05 * trustWeightedCorroboration(cluster, trustOf)).coerceAtMost(0.15)
         val staleness = (cluster.ageMs(nowMs).toDouble() / RECENCY_HORIZON_MS).coerceIn(0.0, 1.0)
         val recencyTerm = 1.0 - 0.25 * staleness
 

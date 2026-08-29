@@ -89,9 +89,18 @@
   .tier { border-bottom: 1px dotted var(--muted); cursor: help; }
   .detail { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
   .standing { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .flags { margin-bottom: 4px; font-size: 12px; color: var(--muted); }
+  .flags .hex { font-variant-numeric: tabular-nums; color: var(--text); }
   .reasons { margin: 0; padding-left: 16px; color: var(--muted); font-size: 12px; }
   .reasons li { margin: 1px 0; }
   .outnote { margin-top: 8px; font-size: 11px; color: var(--muted); }
+  .found-btn {
+    margin-top: 10px; width: 100%; padding: 7px; font-size: 12px; font-weight: 600;
+    border: 1px solid var(--border); border-radius: 6px; background: var(--panel);
+    color: var(--text); cursor: pointer;
+  }
+  .found-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .found-btn:disabled { opacity: 0.6; cursor: default; }
   footer { padding: 14px 18px; color: var(--muted); font-size: 12px; text-align: center; }
   @media (max-width: 480px) { .metrics { grid-template-columns: 1fr; } }
 </style>
@@ -285,22 +294,57 @@
           kv("reports folded", String(c.reportCount)) +
         '</div>' +
         detail(c) +
-        (inBudget ? "" : '<div class="outnote">outside the action budget — listed, not prioritised</div>');
+        (inBudget ? "" : '<div class="outnote">outside the action budget — listed, not prioritised</div>') +
+        foundButton(c);
       grid.appendChild(card);
     });
   }
 
+  /**
+   * Only ever reaches this gateway's own direct peer table (see GatewayServer's /resolve
+   * doc) — a victim known only through relay is not affected by this button, so a wrong tap
+   * on a multi-hop entry is a silent no-op rather than a false "resolved" the mesh disagrees
+   * with.
+   */
+  function foundButton(c) {
+    return '<button class="found-btn" data-origin="' + esc(c.origin) + '">found / safe</button>';
+  }
+
+  function markFound(origin, btn) {
+    btn.disabled = true;
+    btn.textContent = "marking…";
+    fetch("/resolve?peer=" + encodeURIComponent(origin), { method: "POST" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("bad response");
+        btn.textContent = "marked found";
+      })
+      .catch(function () {
+        btn.disabled = false;
+        btn.textContent = "found / safe (retry)";
+      });
+  }
+
+  document.addEventListener("click", function (ev) {
+    var btn = ev.target.closest && ev.target.closest(".found-btn");
+    if (btn) markFound(btn.getAttribute("data-origin"), btn);
+  });
+
   function kv(k, v) { return '<div><span class="k">' + k + '</span><span class="v">' + v + '</span></div>'; }
   function detail(c) {
     var standing = c.standing ? '<div class="standing">' + esc(c.standing) + '</div>' : "";
+    var flags = "";
+    if (Array.isArray(c.evidence) && c.evidence.length) {
+      flags = '<div class="flags"><span class="hex">' + esc(c.flags || "") + '</span> — ' +
+        c.evidence.map(esc).join(", ") + '</div>';
+    }
     var reasons = "";
     if (Array.isArray(c.reasons) && c.reasons.length) {
       reasons = '<ul class="reasons">' + c.reasons.map(function (r) {
         return '<li>' + esc(r) + '</li>';
       }).join("") + '</ul>';
     }
-    if (!standing && !reasons) return "";
-    return '<div class="detail">' + standing + reasons + '</div>';
+    if (!standing && !flags && !reasons) return "";
+    return '<div class="detail">' + standing + flags + reasons + '</div>';
   }
   function pct(d) { return Math.round((d || 0) * 100) + "%"; }
   function ago(s) {

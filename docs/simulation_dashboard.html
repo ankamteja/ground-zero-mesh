@@ -124,6 +124,16 @@
 const FALLBACK_SNAPSHOT = {
   "nowMs": 1756400001680,
   "schematic": true,
+  "flagBits": [
+    "rushing water", "screaming", "pinned", "impact",
+    "enclosed / dark", "manual SOS", "enriched", "reserved"
+  ],
+  "slotNames": [
+    "audio:water", "audio:voice", "audio:structural", "audio:silence",
+    "imu:pinned", "imu:shock", "imu:motion", "imu:still",
+    "light:enclosed", "light:flicker", "event:weight", "event:persistence",
+    "slot:12", "slot:13", "slot:14", "slot:15"
+  ],
   "nodes": [
     {
       "key": "0000-0000-000a@1756400000",
@@ -247,18 +257,6 @@ const FALLBACK_SNAPSHOT = {
   ],
   "advisory": "2 incidents within dispatch capacity.\n1 drowning-imminent \u2014 these outrank everything else regardless of how confident the other reports are.\nTop of board: 0000-0000-000a at sector-7-roof, roof. Evidence: manual SOS, rushing water, pinned, enclosed / dark, enriched. single unconfirmed, 0 corroborating relays.\n2 report(s) are single-sourced and uncorroborated.\nAdvisory only. Ordering above was decided by the deterministic ranker; nothing here changed it."
 };
-
-const FLAG_BITS = [
-  "audio water", "screaming", "pinned", "impact",
-  "low light", "manual SOS", "enriched", "reserved"
-];
-
-const SLOT_NAMES = [
-  "aud:water", "aud:voice", "aud:struct", "aud:silence",
-  "imu:pinned", "imu:shock", "imu:motion", "imu:still",
-  "lgt:enclos", "lgt:flick", "evt:weight", "evt:persist",
-  "reserved", "reserved", "reserved", "reserved"
-];
 
 const SEVERITY_COLOUR = {
   DROWNING_IMMINENT: "#4aa3df",
@@ -511,13 +509,15 @@ function renderInspector() {
   el.className = "";
 
   const flags = node.flags;
-  const bits = FLAG_BITS.map((name, i) =>
+  const flagBits = snapshot.flagBits || [];
+  const bits = flagBits.map((name, i) =>
     `<div class="bit ${(flags >> i) & 1 ? "on" : ""}" title="bit ${i}: ${name}">${i}</div>`
   ).join("");
 
+  const slotNames = snapshot.slotNames || [];
   const vector = (node.vector || []).map((v, i) => `
     <div class="vec">
-      <span>${SLOT_NAMES[i]}</span>
+      <span>${slotNames[i] || "slot:" + i}</span>
       <span class="bar"><i style="width:${Math.round(v * 100)}%"></i></span>
       <span>${v.toFixed(2)}</span>
     </div>`).join("");

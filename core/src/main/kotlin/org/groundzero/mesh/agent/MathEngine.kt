@@ -142,6 +142,23 @@ object SensoryFlags {
         if (isSet(flags, LOW_LIGHT)) add("enclosed / dark")
         if (isSet(flags, STAGE_2_ENRICHED)) add("enriched")
     }
+
+    /**
+     * Bit position (0 = LSB) -> label, same wording [describe] uses. The one shared source
+     * for anything that needs to label all 8 bits regardless of whether they're asserted —
+     * a bit-grid visualiser, say — so it cannot drift from [describe] the way a second
+     * hand-rolled copy would.
+     */
+    val BIT_NAMES: List<String> = listOf(
+        "rushing water", // bit 0 AUDIO_WATER
+        "screaming", // bit 1 AUDIO_SCREAMING
+        "pinned", // bit 2 IMU_PINNED
+        "impact", // bit 3 IMU_IMPACT
+        "enclosed / dark", // bit 4 LOW_LIGHT
+        "manual SOS", // bit 5 MANUAL_SOS
+        "enriched", // bit 6 STAGE_2_ENRICHED
+        "reserved", // bit 7 RESERVED
+    )
 }
 
 /**
@@ -210,23 +227,28 @@ class MathEngine(
         }
     }
 
-    private fun slotName(slot: Int): String = when (slot) {
-        SlmFeatureVector.AUDIO_WATER -> "audio:water"
-        SlmFeatureVector.AUDIO_VOICE -> "audio:voice"
-        SlmFeatureVector.AUDIO_STRUCTURAL -> "audio:structural"
-        SlmFeatureVector.AUDIO_SILENCE -> "audio:silence"
-        SlmFeatureVector.IMU_PINNED -> "imu:pinned"
-        SlmFeatureVector.IMU_SHOCK -> "imu:shock"
-        SlmFeatureVector.IMU_MOTION -> "imu:motion"
-        SlmFeatureVector.IMU_STILL -> "imu:still"
-        SlmFeatureVector.LIGHT_ENCLOSED -> "light:enclosed"
-        SlmFeatureVector.LIGHT_FLICKER -> "light:flicker"
-        SlmFeatureVector.EVENT_WEIGHT -> "event:weight"
-        SlmFeatureVector.EVENT_PERSISTENCE -> "event:persistence"
-        else -> "slot:$slot"
-    }
-
     companion object {
+        /** Which feature a `v_SLM` slot index is — the one shared source for anything that
+         *  labels the vector (this class's [explain], a dashboard's slot list). */
+        fun slotName(slot: Int): String = when (slot) {
+            SlmFeatureVector.AUDIO_WATER -> "audio:water"
+            SlmFeatureVector.AUDIO_VOICE -> "audio:voice"
+            SlmFeatureVector.AUDIO_STRUCTURAL -> "audio:structural"
+            SlmFeatureVector.AUDIO_SILENCE -> "audio:silence"
+            SlmFeatureVector.IMU_PINNED -> "imu:pinned"
+            SlmFeatureVector.IMU_SHOCK -> "imu:shock"
+            SlmFeatureVector.IMU_MOTION -> "imu:motion"
+            SlmFeatureVector.IMU_STILL -> "imu:still"
+            SlmFeatureVector.LIGHT_ENCLOSED -> "light:enclosed"
+            SlmFeatureVector.LIGHT_FLICKER -> "light:flicker"
+            SlmFeatureVector.EVENT_WEIGHT -> "event:weight"
+            SlmFeatureVector.EVENT_PERSISTENCE -> "event:persistence"
+            else -> "slot:$slot"
+        }
+
+        /** [slotName] for every slot index in [SlmFeatureVector.LENGTH] order. */
+        fun slotNames(): List<String> = (0 until SlmFeatureVector.LENGTH).map(::slotName)
+
         /**
          * Weights sum to exactly 1.0, so a vector saturated on every channel projects to 1.0
          * before the IMU term. They are ordered by how specific the evidence is to a person

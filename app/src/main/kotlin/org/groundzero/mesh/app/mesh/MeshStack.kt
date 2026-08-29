@@ -4,6 +4,7 @@ import org.groundzero.mesh.agent.NodeAgent
 import org.groundzero.mesh.agent.SensoryWindow
 import org.groundzero.mesh.agent.SlmFeatureVector
 import org.groundzero.mesh.app.node.MeshRole
+import org.groundzero.mesh.app.transport.PeerTable
 import org.groundzero.mesh.app.transport.StoreAndForward
 import org.groundzero.mesh.gateway.RankedIncident
 import org.groundzero.mesh.gateway.ResponderRanking
@@ -36,6 +37,7 @@ object MeshStack {
     private var agent: NodeAgent? = null
     private var clockMs: () -> Long = { System.currentTimeMillis() }
     private var store: StoreAndForward? = null
+    private var peers: PeerTable? = null
     private var role: MeshRole = MeshRole.NODE
     private var roleListener: ((MeshRole) -> Unit)? = null
 
@@ -46,11 +48,13 @@ object MeshStack {
         agent: NodeAgent,
         clockMs: () -> Long,
         store: StoreAndForward? = null,
+        peers: PeerTable? = null,
     ) = synchronized(lock) {
         this.gossip = gossip
         this.agent = agent
         this.clockMs = clockMs
         this.store = store
+        this.peers = peers
     }
 
     fun clear() = synchronized(lock) {
@@ -58,6 +62,7 @@ object MeshStack {
         agent = null
         clockMs = { System.currentTimeMillis() }
         store = null
+        peers = null
         role = MeshRole.NODE
         roleListener = null
     }
@@ -137,7 +142,22 @@ object MeshStack {
 
     /** What the responder dashboard renders. Empty until the service installs the stack. */
     fun rankedBoard(): List<RankedIncident> = synchronized(lock) {
-        val clusters = gossip?.clusters() ?: return emptyList()
-        ResponderRanking.rank(clusters, clockMs())
+        val g = gossip ?: return emptyList()
+        ResponderRanking.rank(g.clusters(), clockMs(), trustOf = g.dedup()::trustOf)
+    }
+
+    /**
+     * A responder at the gateway has confirmed [nodeId] found/safe.
+     *
+     * This only reaches [PeerTable.markGone] on *this* device's own peer table — the set of
+     * nodes this gateway phone has itself connected to over the radio. A victim several hops
+     * away, known to this board only through relay, is not in it, and no mesh-wide "resolved"
+     * broadcast exists yet to reach one. Silently doing nothing in that case is the honest
+     * behaviour until that propagation is built; a no-op is preferable to a responder
+     * believing they closed out an incident that is still open on every other node's board.
+     */
+    fun markPeerFound(nodeId: NodeId) = synchronized(lock) {
+        peers?.markGone(nodeId)
+        Unit
     }
 }

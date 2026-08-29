@@ -2,7 +2,9 @@ package org.groundzero.mesh.app.gateway
 
 import android.content.Context
 import android.util.Log
+import org.groundzero.mesh.app.mesh.MeshStack
 import org.groundzero.mesh.gateway.RankedIncident
+import org.groundzero.mesh.propagation.NodeId
 import java.io.IOException
 
 /**
@@ -25,6 +27,7 @@ object GatewayController {
         context: Context,
         port: Int = GatewayServer.DEFAULT_PORT,
         clusterSource: () -> List<RankedIncident>,
+        onMarkFound: (NodeId) -> Unit = MeshStack::markPeerFound,
     ) {
         if (server != null) return
         val assets = context.applicationContext.assets
@@ -34,6 +37,7 @@ object GatewayController {
                 runCatching { assets.open("dashboard/$name").use { it.readBytes() } }.getOrNull()
             },
             clustersNow = clusterSource,
+            onMarkFound = onMarkFound,
         )
         try {
             srv.start()

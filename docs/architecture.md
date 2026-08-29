@@ -8,6 +8,18 @@ lands: what it came from, what changed, and why. Two read-only conceptual source
 
 Nothing is forked; everything below is reimplemented from scratch.
 
+## Current values
+
+This ledger is append-only — a revision is logged where it lands, not edited into its
+original mention — so the *first* time a constant appears below is not necessarily its
+*current* value if it was later revised. This table always wins over prose further down;
+each entry also links to where the revision is logged.
+
+| Constant | Current value | Defined in | Revision logged at |
+|---|---|---|---|
+| `DangerScore` EMA `alpha` | `0.35` | `DangerScore.DEFAULT_ALPHA` | "The Math Engine and the flag byte (Phase 8)" below |
+| `TrustConsensus` gain / loss | `+0.05` / `−0.35` | `TrustConsensus.TRUST_GAIN` / `TRUST_LOSS` | "Asymmetric trust decay (Phase 9)" below |
+
 ---
 
 ## L0 Transport
@@ -96,10 +108,12 @@ dependency. Covers exactly the `Envelope` shape.
 ### `DangerScore` — EMA + two thresholds
 
 Inspired by Pramana's risk EMA; simplified. Score is an exponential moving average of
-signals in `0..1` (`alpha = 0.4`). A slow baseline tracks it at ~1/20 the rate. Two
-thresholds (`watch = 0.35`, `alarm = 0.70`) map the score to `CALM` / `WATCH` / `ALARM`.
-No AI at this layer. `explain()` returns the score, baseline, last raw signal and a
-plain-language reason for the "why" panel.
+signals in `0..1`, ported at `alpha = 0.4`. **Superseded — see Current values above:**
+lowered to `0.35` in Phase 8 ("The Math Engine and the flag byte" below); this entry is
+left as originally logged rather than edited in place. A slow baseline tracks the score
+at ~1/20 the rate. Two thresholds (`watch = 0.35`, `alarm = 0.70`) map the score to
+`CALM` / `WATCH` / `ALARM`. No AI at this layer. `explain()` returns the score, baseline,
+last raw signal and a plain-language reason for the "why" panel.
 
 ### `Peer` liveness — `SILENT_AFTER_MS`
 
@@ -259,12 +273,14 @@ however many paths deliver it, does not.
 
 ### Trust asymmetry, exercised rather than assumed
 
-`TrustConsensus` ports the reinforcement rule with gain 0.02 against loss 0.05. The
-handover is explicit that this must be *exercised adversarially* rather than assumed
-correct because the constants were copied accurately — copying a formula right and wiring
-it up wrong is the failure mode that looks most like success. `TrustConsensusTest` asserts
-the behaviour: a node cannot out-earn its own bad conduct, and a discredited node barely
-moves the consensus.
+`TrustConsensus` ports the reinforcement rule with gain 0.02 against loss 0.05.
+**Superseded — see Current values above:** raised to `+0.05` / `−0.35` in Phase 9
+("Asymmetric trust decay" below); this entry is left as originally logged rather than
+edited in place. The handover is explicit that this must be *exercised adversarially*
+rather than assumed correct because the constants were copied accurately — copying a
+formula right and wiring it up wrong is the failure mode that looks most like success.
+`TrustConsensusTest` asserts the behaviour: a node cannot out-earn its own bad conduct,
+and a discredited node barely moves the consensus.
 
 ### The first-hand gate is structural, not a threshold
 
@@ -318,15 +334,28 @@ of the same rule drifting on its own — deleted in `phase6/wire-gateway`.
   model, no internet. A real `AiAdvisor` seam, if wanted, belongs in `core` next to
   `ResponderRanking`, not in the app.
 
-### Open gap flagged to Claude A
+### Open gap: no true fold count
 
 `RankedIncident` / `IncidentCluster` carry no count of raw reports folded in —
 `corroborators` is a `Set<NodeId>` of distinct relayers. The dashboard's `reportCount`
 therefore uses `corroborators.size` as the closest honest proxy (distinct nodes that
 carried the incident, first included), and `corroboration` uses `corroborationCount`
 (`size - 1`). If a true fold count is wanted on the board, `IncidentCluster` needs a
-`reportCount` field maintained in `DedupCluster.ingest` — a `core` change, so it is a PR
-conversation, not a local edit.
+`reportCount` field maintained in `DedupCluster.ingest` — a `core` change; see `TODO.md`.
+
+### The sensory-flag pipeline reached everywhere except the real dashboard (closed 2026-08-30)
+
+The Math Engine / flag byte (Phase 8) was wired end-to-end from `SensorBridge` through to
+`SimulationRunner`'s JSON and the CLI simulation's dashboard, but `ClusterJson` — the
+serialisation that actually feeds a responder's phone — stopped at the fields that existed
+before Part II. `ClusterJson.obj` now also emits `flags` (`SensoryFlags.toHex`), `evidence`
+(`SensoryFlags.describe`) and `origin` (the cluster's origin `NodeId`, canonical form);
+`assets/dashboard/index.html` renders the first two in each card's detail row.
+
+`origin` also backs a new write path: each card gets a "found / safe" button that `POST`s
+`/resolve?peer=<origin>` on `GatewayServer`, which calls `MeshStack.markPeerFound` ->
+`PeerTable.markGone`. This only reaches the gateway phone's *own* direct peer table — see
+the follow-up in `TODO.md` about the mesh-wide propagation this does not yet do.
 
 ---
 
@@ -377,6 +406,17 @@ heartbeat emits nothing, so the ticker is nearly free when there is nothing to s
 `NodeAgent.livenessTick` is not driven. It expects a `MutableMap<NodeId, Peer>` and the app
 keeps peers in `PeerTable`, whose own `decayTick` runs in the maintenance tick — peers still
 decay and go SILENT on time. The agent's copy of that concern is unused on device.
+
+### Role survives a service restart, wired (closed 2026-08-30)
+
+`MeshStack.clear()` resets `role` to `NODE` on every service teardown, but
+`NodeViewModel.role` is Activity-scoped Compose state that survives independently. An OEM
+killing just the service (`START_STICKY` restart) used to leave the UI still showing e.g.
+`GATEWAY` while the freshly-rebuilt stack silently originated and sensed as `NODE` — what
+the screen claimed stopped being what actually ran. `RoleStore` (SharedPreferences,
+alongside `NodeIdStore`) now persists the role on every `MeshForegroundService.applyRole`
+call; `onCreate` reads it back and calls `MeshStack.setRole` before the stack does anything,
+so a restart resumes the role the UI still shows instead of falling back to `NODE`.
 
 ---
 
@@ -461,6 +501,19 @@ judges, but only where there are grounds to:
 
 The incident itself is unaffected by a conflicting report: severity still takes the most
 urgent claim ever seen and never walks back to a calmer one.
+
+### The trust *value* still went nowhere (closed 2026-08-30)
+
+`judge` firing in production was necessary but not sufficient: it moved a trust number,
+but nothing downstream ever read `DedupCluster.trustOf`. A discredited relay's reports
+ranked identically to a trusted one's on the actual board — the asymmetric decay above
+computed a number nobody consumed, which is the exact same bug class in a different spot.
+`ResponderRanking.rank` now takes a `trustOf: (NodeId) -> Double` (defaulting to neutral
+for callers with no trust state) and weights each cluster's corroboration by the average
+trust of its corroborators before it enters both the sort and the displayed `priority` —
+see `trustWeightedCorroboration` in `gateway/ResponderRanking.kt`. Both production callers
+(`MeshStack.rankedBoard`, `SimulationRunner`) now pass the real `DedupCluster.trustOf`
+through `Gossip.dedup()`.
 
 ---
 

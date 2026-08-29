@@ -18,6 +18,7 @@ import org.groundzero.mesh.app.mesh.MeshStack
 import org.groundzero.mesh.app.transport.GossipOriginTransport
 import org.groundzero.mesh.app.transport.NearbyTransport
 import org.groundzero.mesh.app.node.MeshRole
+import org.groundzero.mesh.app.node.RoleStore
 import org.groundzero.mesh.app.sensors.SensorBridge
 import org.groundzero.mesh.app.transport.StoreAndForward
 import org.groundzero.mesh.propagation.Gossip
@@ -95,13 +96,16 @@ class MeshForegroundService : Service() {
             },
             clockMs = clock,
         )
-        MeshStack.install(gossip, agent, clock, storeAndForward)
+        MeshStack.install(gossip, agent, clock, storeAndForward, radio.peers)
 
         radio.onReceive { from, frame -> MeshStack.ingest(frame, from) }
         radio.onPeerConnected { peer -> replayTo(radio, peer) }
         radio.start()
 
         sensors = SensorBridge(this, handler)
+        // Restore the role the responder had picked before this instance existed — MeshStack
+        // otherwise comes up as NODE regardless of what the (possibly still-running) UI shows.
+        MeshStack.setRole(RoleStore.get(this))
         MeshStack.onRoleChange { applyRole(it) }
         applyRole(MeshStack.currentRole())
 
@@ -134,6 +138,7 @@ class MeshForegroundService : Service() {
      */
     private fun applyRole(role: MeshRole) {
         if (role == MeshRole.NODE) sensors?.start() else sensors?.stop()
+        RoleStore.set(this, role)
         Log.i(TAG, "role is now $role")
     }
 

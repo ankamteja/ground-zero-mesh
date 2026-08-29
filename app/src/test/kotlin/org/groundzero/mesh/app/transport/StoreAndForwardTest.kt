@@ -17,21 +17,21 @@ class StoreAndForwardTest {
         assertTrue(key.all { it in "0123456789abcdef" })
         assertNotEquals("sector-7", key)
         assertEquals(key, saf.bucketKey("sector-7")) // stable
+        assertNotEquals(key, saf.bucketKey("other")) // distinct per zone
     }
 
     @Test
-    fun drainReturnsBufferedFramesForZone() {
+    fun drainAllReturnsEveryBufferedFrame() {
         saf.offer("z", "n@1", byteArrayOf(1))
-        saf.offer("z", "n@2", byteArrayOf(2))
-        assertEquals(2, saf.drain("z").size)
-        assertEquals(0, saf.drain("other").size)
+        saf.offer("other", "m@1", byteArrayOf(2))
+        assertEquals(2, saf.drainAll().size)
     }
 
     @Test
     fun sameDedupKeyReplacesInPlace() {
         saf.offer("z", "n@1", byteArrayOf(1))
         saf.offer("z", "n@1", byteArrayOf(9))
-        val frames = saf.drain("z")
+        val frames = saf.drainAll()
         assertEquals(1, frames.size)
         assertEquals(9, frames[0][0].toInt())
     }
@@ -40,12 +40,12 @@ class StoreAndForwardTest {
     fun framesExpireAfterTtl() {
         saf.offer("z", "n@1", byteArrayOf(1))
         now += 1001
-        assertEquals(0, saf.drain("z").size)
+        assertEquals(0, saf.drainAll().size)
     }
 
     @Test
     fun bucketIsBounded() {
         repeat(10) { saf.offer("z", "n@$it", byteArrayOf(it.toByte())) }
-        assertEquals(4, saf.drain("z").size)
+        assertEquals(4, saf.drainAll().size)
     }
 }

@@ -30,6 +30,7 @@ class ClusterJsonTest {
         minHops: Int = 1,
         ageSeconds: Long = 30,
         slm: String? = null,
+        flags: Byte = 0,
     ) = IncidentCluster(
         key = key,
         origin = NodeId(1L),
@@ -42,6 +43,7 @@ class ClusterJsonTest {
         firstSeenMs = now - ageSeconds * 1000,
         lastUpdatedMs = now - ageSeconds * 1000,
         slmSummary = slm,
+        flags = flags,
         firstHandHeld = firstHand,
     )
 
@@ -131,6 +133,15 @@ class ClusterJsonTest {
             listOf(cluster("k-2", "z", Severity.OTHER, danger = 0.20, firstHand = true)),
         )
         assertTrue(belowFloor.contains("\"standing\":\"below reporting floor\""))
+    }
+
+    @Test
+    fun serialisesSensoryFlagsAndEvidenceForTheRealDashboard() {
+        // MANUAL_SOS (0x20) | AUDIO_WATER (0x01) = 0x21 — the flag byte the on-phone gateway
+        // must forward, not just the CLI simulation's dashboard.
+        val j = json(listOf(cluster("k-1", "z", Severity.OTHER, danger = 0.7, flags = 0x21)))
+        assertTrue(j.contains("\"flags\":\"0x21\""))
+        assertTrue(j.contains("\"evidence\":[\"manual SOS\",\"rushing water\"]"))
     }
 
     @Test

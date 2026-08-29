@@ -27,9 +27,15 @@ class SimulationRunnerTest {
 
     @Test
     fun `the json snapshot is well formed enough for the dashboard`() {
-        listOf("\"nodes\"", "\"links\"", "\"advisory\"", "\"flagsHex\"", "\"placed\"")
+        listOf("\"nodes\"", "\"links\"", "\"advisory\"", "\"flagsHex\"", "\"placed\"", "\"flagBits\"", "\"slotNames\"")
             .forEach { assertTrue(report.json.contains(it), "missing json field: $it") }
         assertTrue(report.json.trim().startsWith("{") && report.json.trim().endsWith("}"))
+    }
+
+    @Test
+    fun `flagBits and slotNames are the same labels SensoryFlags and MathEngine own`() {
+        assertTrue(report.json.contains("\"rushing water\",\"screaming\""))
+        assertTrue(report.json.contains("\"audio:water\",\"audio:voice\""))
     }
 
     @Test

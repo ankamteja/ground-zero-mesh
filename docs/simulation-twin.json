@@ -1,6 +1,8 @@
 {
   "nowMs": 1756400001680,
   "schematic": true,
+  "flagBits": ["rushing water","screaming","pinned","impact","enclosed / dark","manual SOS","enriched","reserved"],
+  "slotNames": ["audio:water","audio:voice","audio:structural","audio:silence","imu:pinned","imu:shock","imu:motion","imu:still","light:enclosed","light:flicker","event:weight","event:persistence","slot:12","slot:13","slot:14","slot:15"],
   "nodes": [
     {
       "key": "0000-0000-000a@1756400000",

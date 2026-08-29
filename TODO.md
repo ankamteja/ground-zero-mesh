@@ -13,7 +13,7 @@ Tick items in the same PR that does the work.
 - [x] `[A]` `EnvelopeCodec` / `JsonCodec` / `CompactCodec` / `Codecs.forFrameBudget`
 - [x] `[A]` `Transport` seam + `SimNetwork` / `SimTransport` (virtual clock, adjacency, latency, loss)
 - [x] `[A]` `DangerScore` (EMA + two thresholds) / `ScoreExplanation` / `AgentState` / `SosInput`
-- [x] `[AB]` `./gradlew :core:test` green (41 tests)
+- [x] `[AB]` `./gradlew :core:test` green (150 tests in `core`, 196 across `core` + `app` as of PR #17 — grows with every phase, re-check before trusting this number)
 
 > Note: this baseline was seeded by [B] from the handover so the `app/` module has
 > something to compile against. Types match the handover signatures verbatim. [A] owns
@@ -22,27 +22,27 @@ Tick items in the same PR that does the work.
 
 ## Phase 2 — NearbyTransport  `[B]`  (highest risk, in progress)
 
-- [ ] `[B]` `app/` module — AGP + Compose, `minSdk 24`, `implementation(project(":core"))`
-- [ ] `[B]` uncomment `include(":app")` in `settings.gradle.kts` (same PR)
-- [ ] `[B]` `NearbyTransport : Transport` over `P2P_CLUSTER` — advertise / discover / connect / send / receive
-- [ ] `[B]` codec via `Codecs.forFrameBudget(maxFrameBytes)`, never hardcoded
-- [ ] `[B]` per-API-level permission matrix + runtime request + rationale UI
+- [x] `[B]` `app/` module — AGP + Compose, `minSdk 24`, `implementation(project(":core"))`
+- [x] `[B]` uncomment `include(":app")` in `settings.gradle.kts` (same PR)
+- [x] `[B]` `NearbyTransport : Transport` over `P2P_CLUSTER` — advertise / discover / connect / send / receive
+- [x] `[B]` codec via `Codecs.forFrameBudget(maxFrameBytes)`, never hardcoded (`Gossip` derives it from `transport.maxFrameBytes`)
+- [x] `[B]` per-API-level permission matrix + runtime request + rationale UI (`MeshPermissions`)
       - pre-12: `ACCESS_FINE_LOCATION`
       - 31+: `BLUETOOTH_ADVERTISE`, `BLUETOOTH_CONNECT`, `BLUETOOTH_SCAN`
       - 33+: `NEARBY_WIFI_DEVICES`
-- [ ] `[B]` foreground service + wake lock — scanning survives screen-off
-- [ ] `[B]` `PeerTable` — decay toward neutral, never drop on silence (uses `core` `Peer`)
-- [ ] `[B]` honour `Peer.SILENT_AFTER_MS`; `SILENT` vs `GONE` distinct; only `SILENT` from a timer
-- [ ] `[B]` `StoreAndForward` — TTL'd buffer keyed `SHA256("zone:" + zoneId)`
+- [x] `[B]` foreground service + wake lock — scanning survives screen-off
+- [x] `[B]` `PeerTable` — decay toward neutral, never drop on silence (uses `core` `Peer`)
+- [x] `[B]` honour `Peer.SILENT_AFTER_MS`; `SILENT` vs `GONE` distinct; only `SILENT` from a timer
+- [x] `[B]` `StoreAndForward` — TTL'd buffer keyed `SHA256("zone:" + zoneId)`
 - [ ] `[B]` VERIFY on 2 physical phones (oldest + newest): force-kill one, reconnect, prove replay. Record hardware + Android versions in the PR body.
 
 ## Phase 1 — Compose NodeScreen  `[B]` UI · `[A]` logic
 
-- [ ] `[B]` SOS button + severity picker (drowning / entrapment / other)
-- [ ] `[B]` live `DangerScore` + `AgentState`
-- [ ] `[B]` "why" panel — render `ScoreExplanation` verbatim
-- [ ] `[B]` runtime role switcher Node / Relay / Gateway
-- [ ] `[A]` agent loop wiring the screen to `core`
+- [x] `[B]` SOS button + severity picker (drowning / entrapment / other)
+- [x] `[B]` live `DangerScore` + `AgentState`
+- [x] `[B]` "why" panel — render `ScoreExplanation` verbatim
+- [x] `[B]` runtime role switcher Node / Relay / Gateway
+- [x] `[A]` agent loop wiring the screen to `core`
 
 ## Phase 4 — L3 Responder Gateway  `[B]`
 
@@ -79,6 +79,19 @@ Tick items in the same PR that does the work.
 - [x] `[B]` verify Meshtastic payload figure — it is **233**, not 237 (`docs/research/meshtastic-payload.md`); `CompactCodec.LORA_MAX_FRAME` set to 233
 - [x] `[B]` `LoRaBridgeTransport : Transport` — ESP32 / Meshtastic over BLE-to-serial, `CompactCodec` frames (BLE GATT plumbing unverified on hardware)
 - [ ] `[B]` bench against `SimTransport`-driven envelopes before real radio
+
+## Follow-ups from the post-Part-II audit (2026-08-30)
+
+- [ ] `[A]` no mesh-wide "resolved" broadcast exists yet. `MeshStack.markPeerFound` /
+      `GatewayServer`'s `POST /resolve` only reach the gateway phone's own direct
+      `PeerTable` — a victim known to the board only through relay is unaffected by a
+      responder's "found / safe" tap. Needs a new envelope/gossip message type that
+      propagates a GONE signal hop-by-hop.
+- [ ] `[B]` `Peer.healthy` still has no production reader — related to the above; likely
+      resolves once something downstream actually consumes peer liveness/health.
+- [ ] `[A]` `IncidentCluster` has no true fold count of raw reports; `ClusterJson`'s
+      `reportCount` uses `corroborators.size` as the closest honest proxy. Add a real
+      `reportCount` field maintained in `DedupCluster.ingest` if the board needs it.
 
 ## Open assumptions (name them in the deck and in UI copy)
 

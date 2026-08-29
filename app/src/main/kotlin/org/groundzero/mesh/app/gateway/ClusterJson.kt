@@ -1,5 +1,6 @@
 package org.groundzero.mesh.app.gateway
 
+import org.groundzero.mesh.agent.SensoryFlags
 import org.groundzero.mesh.gateway.RankedIncident
 
 /**
@@ -13,7 +14,7 @@ import org.groundzero.mesh.gateway.RankedIncident
  * `reportCount` has no true source yet: [org.groundzero.mesh.propagation.IncidentCluster]
  * counts distinct relayers, not raw reports folded in. `corroborators.size` is the closest
  * honest proxy (every distinct node that carried this incident, including the first). A
- * real fold count on `IncidentCluster` is flagged to Claude A.
+ * real fold count on `IncidentCluster` is an open item — see `TODO.md`.
  */
 object ClusterJson {
 
@@ -29,6 +30,8 @@ object ClusterJson {
         val c = r.cluster
         append('{')
         str("clusterId", c.key); append(',')
+        // Which peer a "found / safe" action should target — see GatewayServer's /resolve.
+        str("origin", c.origin.canonical()); append(',')
         str("zone", c.zone); append(',')
         str("severity", c.severity.name); append(',')
         // The tier a downstream holder can actually rely on — already relay-downgraded.
@@ -43,6 +46,8 @@ object ClusterJson {
         str("standing", r.standing.label); append(',')
         // The first-hand gate: only a first-hand, above-floor incident may commit a team.
         bool("dispatchable", r.standing.dispatchable); append(',')
+        str("flags", SensoryFlags.toHex(c.flags)); append(',')
+        strArray("evidence", SensoryFlags.describe(c.flags)); append(',')
         strArray("reasons", r.reasons)
         append('}')
     }

@@ -2,6 +2,7 @@ package org.groundzero.mesh.app.gateway
 
 import fi.iki.elonen.NanoHTTPD
 import org.groundzero.mesh.gateway.RankedIncident
+import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.propagation.Severity
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
@@ -16,6 +17,7 @@ import java.util.concurrent.CopyOnWriteArrayList
  * - `GET /` , `/index.html` — the static dashboard (from `assets/dashboard/`)
  * - `GET /snapshot`         — the current ranked incidents, once, as JSON
  * - `GET /events`           — Server-Sent Events; a `data:` line every [pushIntervalMs]
+ * - `POST /resolve?peer=<nodeId>` — a responder confirmed `peer` found/safe (see [onMarkFound])
  *
  * The dashboard falls back to polling `/snapshot` if `/events` is unavailable, so the SSE
  * path is best-effort.
@@ -31,6 +33,7 @@ class GatewayServer(
     private val now: () -> Long = System::currentTimeMillis,
     private val readAsset: (String) -> ByteArray?,
     private val clustersNow: () -> List<RankedIncident>,
+    private val onMarkFound: (NodeId) -> Unit = {},
 ) : NanoHTTPD(port) {
 
     private val subscribers = CopyOnWriteArrayList<PipedOutputStream>()
@@ -48,14 +51,27 @@ class GatewayServer(
         super.stop()
     }
 
-    override fun serve(session: IHTTPSession): Response = when (session.uri) {
-        "/", "/index.html" -> asset("index.html", "text/html")
-        "/snapshot" -> json(payload())
-        "/events" -> sse()
+    override fun serve(session: IHTTPSession): Response = when {
+        session.uri == "/resolve" && session.method == Method.POST -> resolve(session)
+        session.uri == "/" || session.uri == "/index.html" -> asset("index.html", "text/html")
+        session.uri == "/snapshot" -> json(payload())
+        session.uri == "/events" -> sse()
         else -> {
             val name = session.uri.removePrefix("/")
             if (name.contains("..")) forbidden() else asset(name, mimeFor(name))
         }
+    }
+
+    /**
+     * A responder confirmed a peer found/safe. [onMarkFound] is `MeshStack::markPeerFound`
+     * in the app — see that method's doc for what this can and cannot reach (this device's
+     * own peer table only; it is not a mesh-wide resolution).
+     */
+    private fun resolve(session: IHTTPSession): Response {
+        val raw = session.parms["peer"] ?: return badRequest("missing peer")
+        val nodeId = runCatching { NodeId.parse(raw) }.getOrElse { return badRequest("bad peer id") }
+        onMarkFound(nodeId)
+        return json("{\"ok\":true}")
     }
 
     private fun payload(): String {
@@ -125,6 +141,7 @@ class GatewayServer(
 
     private fun notFound() = newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "not found")
     private fun forbidden() = newFixedLengthResponse(Response.Status.FORBIDDEN, "text/plain", "no")
+    private fun badRequest(msg: String) = newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", msg)
 
     private fun mimeFor(name: String) = when {
         name.endsWith(".html") -> "text/html"

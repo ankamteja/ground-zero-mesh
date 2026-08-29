@@ -4,8 +4,9 @@ import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * A short-lived, per-zone outbox. When a node reconnects it pulls the recent envelopes for
- * its zone instead of forcing a full re-flood of the mesh.
+ * A short-lived outbox, bucketed by zone. When a node reconnects it replays every buffered
+ * frame instead of forcing a full re-flood of the mesh — see [drainAll] for why replay
+ * cannot be scoped to just the peer's zone.
  *
  * Frames are bucketed by `SHA256("zone:" + zoneId)` so a zone tag never appears in the
  * clear as a map key, and every frame carries a TTL. Expired frames are dropped lazily on
@@ -33,16 +34,6 @@ class StoreAndForward(
             list.removeAll { it.dedupKey == dedupKey || it.expiresAt <= clock() }
             list.add(Entry(dedupKey, frame.copyOf(), clock() + ttlMs))
             while (list.size > maxPerBucket) list.removeAt(0)
-        }
-    }
-
-    /** Un-expired frames buffered for [zoneId], oldest first. */
-    fun drain(zoneId: String): List<ByteArray> {
-        val list = buckets[bucketKey(zoneId)] ?: return emptyList()
-        val now = clock()
-        return synchronized(list) {
-            list.removeAll { it.expiresAt <= now }
-            list.map { it.frame.copyOf() }
         }
     }
 

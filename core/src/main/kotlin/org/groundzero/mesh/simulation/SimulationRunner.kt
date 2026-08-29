@@ -169,7 +169,11 @@ object SimulationRunner {
         say()
 
         say("--- L3: the responder board ---")
-        val board = ResponderRanking.rank(boardClusters.clusters(), EPOCH_MS + net.nowMs())
+        val board = ResponderRanking.rank(
+            boardClusters.clusters(),
+            EPOCH_MS + net.nowMs(),
+            trustOf = boardClusters::trustOf,
+        )
         for ((i, entry) in board.withIndex()) {
             say("${i + 1}. ${entry.cluster.origin} ${entry.cluster.severity} " +
                 "zone=${entry.cluster.zone} tier=${entry.cluster.tier} " +
@@ -233,9 +237,13 @@ object SimulationRunner {
             """    { "carrier": "${it.carrier.canonical()}", "incidentKey": "${esc(it.incidentKey)}" }"""
         }
         val advisory = esc(RadminLlmSummarizer().summarise(board, twin)).replace("\n", "\\n")
+        val flagBits = SensoryFlags.BIT_NAMES.joinToString(",") { "\"${esc(it)}\"" }
+        val slotNames = MathEngine.slotNames().joinToString(",") { "\"${esc(it)}\"" }
         return """{
   "nowMs": ${twin.nowMs},
   "schematic": true,
+  "flagBits": [$flagBits],
+  "slotNames": [$slotNames],
   "nodes": [
 $nodes
   ],

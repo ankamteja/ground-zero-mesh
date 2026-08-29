@@ -3,8 +3,10 @@ package org.groundzero.mesh.app.mesh
 import org.groundzero.mesh.agent.NodeAgent
 import org.groundzero.mesh.app.node.MeshRole
 import org.groundzero.mesh.app.transport.GossipOriginTransport
+import org.groundzero.mesh.app.transport.PeerTable
 import org.groundzero.mesh.propagation.Gossip
 import org.groundzero.mesh.propagation.NodeId
+import org.groundzero.mesh.propagation.PeerLiveness
 import org.groundzero.mesh.propagation.Severity
 import org.groundzero.mesh.transport.SimNetwork
 import org.junit.After
@@ -24,7 +26,7 @@ class MeshStackTest {
     @After
     fun tearDown() = MeshStack.clear()
 
-    private fun install() {
+    private fun install(peers: PeerTable? = null) {
         net.link(a, b)
         val radio = net.transportFor(a)
         val gossip = Gossip(radio, clockMs = net::nowMs)
@@ -41,6 +43,7 @@ class MeshStackTest {
                 clockMs = net::nowMs,
             ),
             clockMs = net::nowMs,
+            peers = peers,
         )
     }
 
@@ -113,6 +116,22 @@ class MeshStackTest {
         MeshStack.setRole(MeshRole.GATEWAY)
 
         assertEquals(listOf(MeshRole.RELAY, MeshRole.GATEWAY), seen)
+    }
+
+    @Test
+    fun `markPeerFound reaches this device's own peer table`() {
+        val table = PeerTable(clock = net::nowMs)
+        table.sawInbound(b, "addr")
+        install(peers = table)
+
+        MeshStack.markPeerFound(b)
+
+        assertEquals(PeerLiveness.GONE, table.liveness(b))
+    }
+
+    @Test
+    fun `markPeerFound on an uninstalled stack is a safe no-op`() {
+        MeshStack.markPeerFound(b)
     }
 
     @Test

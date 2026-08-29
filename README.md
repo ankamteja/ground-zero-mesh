@@ -42,7 +42,7 @@ linear projection whose contributing feature can always be named.
 - **Localisation is not solved, and nothing pretends otherwise.** The Digital Twin places incidents from the zone tag alone; an incident whose zone names no floor renders as explicitly unplaced rather than being drawn on the ground floor.
 - **LoRa is in scope.** Hence the hard byte budget on the wire.
 - **Wire format:** JSON on phone-to-phone hops, compact binary on LoRa hops — one `Envelope`, two projections, chosen from the transport's frame budget. Every envelope carries the 8-bit sensory flag byte; the full feature vector is optional and rides only on the Stage 3 enriched broadcast.
-- **No raw audio / images / video on the mesh, ever.** Rich sensory data is turned into text before it crosses the wire.
+- **No raw audio / images / video on the mesh, ever.** Rich sensory data is reduced to an 8-bit flag byte plus, optionally, a quantised 16-float `v_SLM` vector before it crosses the wire — never the raw signal itself.
 
 ## Modules
 
