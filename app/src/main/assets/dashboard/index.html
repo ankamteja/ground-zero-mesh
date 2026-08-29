@@ -58,8 +58,8 @@
     background: color-mix(in srgb, var(--bg) 82%, transparent); padding: 5px 8px; border: 1px solid var(--line);
   }
   .hint { left: 12px; bottom: 12px; }
-  .caveat-chip { right: 12px; top: 12px; max-width: 280px; text-align: right; }
-  .legend { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; align-items: flex-end; }
+  .caveat-chip { right: 12px; top: 12px; text-align: right; }
+  .legend { margin-top: 6px; display: flex; gap: 10px; justify-content: flex-end; }
   .legend span { display: flex; align-items: center; gap: 5px; }
   .swatch { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   .swatch.node { background: var(--drown); }
@@ -163,11 +163,11 @@
     <canvas id="view" aria-hidden="true"></canvas>
     <div class="hint">drag orbit &middot; shift-drag pan &middot; wheel zoom &middot; tap a marker</div>
     <div class="caveat-chip">
-      positions are schematic — from the zone tag alone, never measured
+      schematic — not measured
       <div class="legend">
-        <span><i class="swatch node"></i> incident &middot; colour = severity</span>
-        <span><i class="swatch relay"></i> relay &middot; carried a report, position unknown</span>
-        <span><i class="swatch self"></i> this device &middot; the responder, fixed at centre</span>
+        <span><i class="swatch node"></i> incident</span>
+        <span><i class="swatch relay"></i> relay</span>
+        <span><i class="swatch self"></i> you</span>
       </div>
     </div>
   </div>
