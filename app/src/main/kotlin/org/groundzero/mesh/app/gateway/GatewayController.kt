@@ -9,9 +9,10 @@ import java.io.IOException
  * Lifecycle wrapper for the [GatewayServer]. The Gateway role starts this; other roles
  * never touch it.
  *
- * [clusterSource] is expected to be `ResponderRanking.rank(gossip.clusters(), now)` once
- * the mesh stack runs in the service (Step 2). Until then a caller may pass `{ emptyList() }`
- * and the dashboard simply shows nothing.
+ * [clusterSource] is `MeshStack::rankedBoard` in the app — the ranked view of whatever the
+ * service's [org.groundzero.mesh.propagation.Gossip] currently holds. It is read on a
+ * NanoHTTPD worker thread, which is why `MeshStack` serialises access rather than assuming
+ * one.
  */
 object GatewayController {
 
