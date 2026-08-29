@@ -119,3 +119,27 @@ renders the ranked list first and folds the advice string in beside it.
 
 The dashboard shows `effectiveTier` (already downgraded for relay hops), never the origin's
 claimed `tier`, so a responder can tell corroborated from single-unconfirmed at a glance.
+
+---
+
+## L0 LoRa bridge
+
+### `MeshtasticFrame` — stopgap serial framing
+
+New, explicitly temporary. Wraps each opaque `CompactCodec` frame as
+`[0xA5 0x5A][srcNodeNum u32][len u16][payload]` so the BLE-to-serial bridge can carry a
+sender identity and delimit frames. `Reassembler` accumulates BLE-notification chunks and
+resynchronises on the magic bytes.
+
+**Changes once the Meshtastic protobufs are linked:** a real Meshtastic `MeshPacket`
+carries `from`/`to` (32-bit node numbers) in its own header, *outside* the 233-byte
+`Data.payload`. At that point this 8-byte header goes away and
+`LoRaBridgeTransport.maxFrameBytes` rises from `233 - 8` to the full `233`.
+
+### `LoRaBridgeTransport`
+
+`Transport` over BLE GATT to the Nordic UART Service (`6e400001-…`), RX = `…0002…`,
+TX notify = `…0003…`. MTU negotiated to 247; outbound datagrams chunked to the negotiated
+payload and written one acked op at a time. Node numbers map to `NodeId` by zero-extending
+the 32-bit value into the 48-bit space. The GATT plumbing is unverified against hardware —
+every such point is marked `VERIFY(hardware)` in the source.
