@@ -2,14 +2,16 @@ package org.groundzero.mesh.app.gateway
 
 import android.content.Context
 import android.util.Log
+import org.groundzero.mesh.gateway.RankedIncident
 import java.io.IOException
 
 /**
  * Lifecycle wrapper for the [GatewayServer]. The Gateway role starts this; other roles
  * never touch it.
  *
- * The clusters shown are produced by [ClusterRanker] from whatever L2 has folded so far;
- * until L2 is wired in, [clusterSource] can be any provider (empty list, or a demo feed).
+ * [clusterSource] is expected to be `ResponderRanking.rank(gossip.clusters(), now)` once
+ * the mesh stack runs in the service (Step 2). Until then a caller may pass `{ emptyList() }`
+ * and the dashboard simply shows nothing.
  */
 object GatewayController {
 
@@ -21,7 +23,7 @@ object GatewayController {
     fun start(
         context: Context,
         port: Int = GatewayServer.DEFAULT_PORT,
-        clusterSource: () -> List<SurvivorCluster>,
+        clusterSource: () -> List<RankedIncident>,
     ) {
         if (server != null) return
         val assets = context.applicationContext.assets

@@ -46,12 +46,25 @@ Tick items in the same PR that does the work.
 
 ## Phase 4 — L3 Responder Gateway  `[B]`
 
-- [ ] `[B]` `GatewayServer` — NanoHTTPD + SSE on the gateway phone
-- [ ] `[B]` gateway phone opens its own Wi-Fi hotspot; laptop joins, browses in, zero install
-- [ ] `[B]` `dashboard/index.html` — static, inline JS, no build step
-- [ ] `[B]` ranked clusters (not raw report spam) by severity + trust + recency; `effectiveTier` shown per entry
-- [ ] `[B]` explicit scarcity budget (~14 actions / window)
-- [ ] `[B]` `AiAdvisor` — advisory summary on top of deterministic rank; stubbable; offline; never gates
+- [x] `[B]` `GatewayServer` — NanoHTTPD + SSE on the gateway phone
+- [ ] `[B]` gateway phone opens its own Wi-Fi hotspot; laptop joins, browses in, zero install (device test — Phase 6 Step 5)
+- [x] `[B]` `dashboard/index.html` — static, inline JS, no build step
+- [x] `[B]` ranked clusters (not raw report spam) by severity + trust + recency; `effectiveTier` shown per entry — now `core`'s `ResponderRanking` (Phase 6)
+- [x] `[B]` explicit scarcity budget (~14 actions / window) — `ResponderRanking.BUDGET_ACTIONS`
+- [x] `[B]` `AiAdvisor` — advisory summary on top of deterministic rank; stubbable; offline; never gates — now `GatewayServer.advise()` one-liner (Phase 6)
+
+## Phase 6 — wire the gateway to core  `[B]`
+
+- [x] `[B]` `GatewayServer` / `GatewayController` take `() -> List<RankedIncident>` (core type)
+- [x] `[B]` `ClusterJson` serialises `RankedIncident` to the dashboard field names + `standing` / `dispatchable` / `priority` / `reasons`
+- [x] `[B]` delete app-side `ClusterRanker` / `SurvivorCluster` / `SurvivorReport` / `AiAdvisor` — `core` is canonical
+- [x] `[B]` advisory is a deterministic one-liner in the gateway, offline, never reorders
+- [x] `[B]` dashboard detail row for `standing` + `reasons`; `fixtures.json` updated to the live shape
+- [x] `[AB]` tests: hand-built `IncidentCluster` -> `ResponderRanking.rank` -> assert JSON shape + order
+- [ ] `[B]` Step 2 — `MeshForegroundService` builds `Gossip` + `NodeAgent`, feeds `GatewayController.start(ctx) { ResponderRanking.rank(gossip.clusters(), now) }`
+- [ ] `[B]` Step 3 — `SensorBridge`: mic RMS / accel / light -> `senseTick`; snapshot -> `completeSensoryWindow`
+- [ ] `[B]` Step 4 — role switch controls what runs (Gateway server+hotspot / Node agent+sensors / Relay gossip-only)
+- [ ] `[B]` Step 5 — 3-phone field test; per-API permission matrix on oldest + newest phone; record hardware in PR body
 
 ## Phase 5 — LoRa bridge  `[B]`
 
@@ -66,4 +79,4 @@ Tick items in the same PR that does the work.
 
 ## Docs
 
-- [ ] `[B]` log every ported formula in `docs/architecture.md` as it lands
+- [x] `[B]` log every ported formula in `docs/architecture.md` as it lands (L0/L3 wiring logged; keep appending)

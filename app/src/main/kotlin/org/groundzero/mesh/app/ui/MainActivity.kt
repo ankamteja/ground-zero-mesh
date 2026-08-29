@@ -76,7 +76,8 @@ class MainActivity : ComponentActivity() {
                 if (running) {
                     GatewayController.stop()
                 } else {
-                    // Cluster feed is wired to L2 later; empty until then.
+                    // Feed is ResponderRanking.rank(gossip.clusters(), now) once the mesh
+                    // stack runs in the service (Step 2); empty list until then.
                     GatewayController.start(this@MainActivity) { emptyList() }
                 }
                 running = GatewayController.isRunning

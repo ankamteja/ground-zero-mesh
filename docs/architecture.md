@@ -297,3 +297,33 @@ Nothing is hidden for being beyond it — everything is still shown and still or
 `AiAdvisor` will layer on top of this. The ranking is deterministic and complete on its
 own, and the dashboard is fully functional with no model present and no internet at the
 perimeter.
+
+---
+
+## L3 ranking (Phase 6, app half — wiring the gateway to core)
+
+Phase 4 shipped an app-side ranker (`ClusterRanker` / `SurvivorCluster` / `SurvivorReport`)
+and an app-side `AiAdvisor` while `core` had none. `core` now owns the canonical
+`ResponderRanking` + `FirstHandGate`, so the app-side copies were a second implementation
+of the same rule drifting on its own — deleted in `phase6/wire-gateway`.
+
+- `GatewayServer` / `GatewayController` now take `() -> List<RankedIncident>` (the `core`
+  type). The gateway is expected to pass `ResponderRanking.rank(gossip.clusters(), now)`.
+- `ClusterJson` serialises `RankedIncident` straight to the field names
+  `assets/dashboard/index.html` already reads, and additionally surfaces `standing`
+  (the `FirstHandGate` label), `dispatchable`, `priority` and `reasons` — the dashboard
+  grew a plain detail row for the last two.
+- The advisory line is now a deterministic one-liner built inside `GatewayServer.advise()`.
+  It summarises what the ranking already decided; it cannot reorder or veto an entry. No
+  model, no internet. A real `AiAdvisor` seam, if wanted, belongs in `core` next to
+  `ResponderRanking`, not in the app.
+
+### Open gap flagged to Claude A
+
+`RankedIncident` / `IncidentCluster` carry no count of raw reports folded in —
+`corroborators` is a `Set<NodeId>` of distinct relayers. The dashboard's `reportCount`
+therefore uses `corroborators.size` as the closest honest proxy (distinct nodes that
+carried the incident, first included), and `corroboration` uses `corroborationCount`
+(`size - 1`). If a true fold count is wanted on the board, `IncidentCluster` needs a
+`reportCount` field maintained in `DedupCluster.ingest` — a `core` change, so it is a PR
+conversation, not a local edit.
