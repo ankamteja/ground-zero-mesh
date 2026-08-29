@@ -19,6 +19,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.groundzero.mesh.app.NodeIdStore
+import org.groundzero.mesh.app.gateway.GatewayController
+import org.groundzero.mesh.app.gateway.GatewayServer
 import org.groundzero.mesh.app.permissions.MeshPermissions
 import org.groundzero.mesh.app.service.MeshForegroundService
 
@@ -36,6 +38,7 @@ class MainActivity : ComponentActivity() {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     var granted by remember { mutableStateOf(MeshPermissions.allGranted(this)) }
                     var running by remember { mutableStateOf(false) }
+                    var gateway by remember { mutableStateOf(GatewayController.isRunning) }
 
                     val requester = androidx.activity.compose.rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestMultiplePermissions()
@@ -59,6 +62,21 @@ class MainActivity : ComponentActivity() {
                                 else MeshForegroundService.start(this@MainActivity)
                                 running = !running
                             }) { Text(if (running) "Stop mesh" else "Start mesh") }
+
+                            Button(onClick = {
+                                if (gateway) {
+                                    GatewayController.stop()
+                                } else {
+                                    // Cluster feed is wired to L2 later; empty until then.
+                                    GatewayController.start(this@MainActivity) { emptyList() }
+                                }
+                                gateway = GatewayController.isRunning
+                            }) {
+                                Text(
+                                    if (gateway) "Stop gateway (:${GatewayServer.DEFAULT_PORT})"
+                                    else "Start responder gateway"
+                                )
+                            }
                         }
                     }
                 }
