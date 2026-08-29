@@ -1,0 +1,10 @@
+[
+  { "clusterId": "zone:sector-7-basement", "zone": "sector-7-basement", "severity": "STRUCTURAL_ENTRAPMENT", "effectiveTier": "PRATYAKSA", "corroboration": 3, "dangerScore": 0.82, "lastSeenSecondsAgo": 40, "reportCount": 11, "recommendedActionRank": 2 },
+  { "clusterId": "zone:rooftop-block-D", "zone": "rooftop-block-D", "severity": "DROWNING_IMMINENT", "effectiveTier": "PRATYAKSA", "corroboration": 2, "dangerScore": 0.61, "lastSeenSecondsAgo": 25, "reportCount": 6, "recommendedActionRank": 1 },
+  { "clusterId": "zone:market-lane-2", "zone": "market-lane-2", "severity": "DROWNING_IMMINENT", "effectiveTier": "SABDA", "corroboration": 1, "dangerScore": 0.55, "lastSeenSecondsAgo": 190, "reportCount": 2, "recommendedActionRank": 3 },
+  { "clusterId": "zone:school-wing-A", "zone": "school-wing-A", "severity": "STRUCTURAL_ENTRAPMENT", "effectiveTier": "ANUMANA", "corroboration": 2, "dangerScore": 0.7, "lastSeenSecondsAgo": 320, "reportCount": 5, "recommendedActionRank": 4 },
+  { "clusterId": "zone:transit-underpass", "zone": "transit-underpass", "severity": "STRUCTURAL_ENTRAPMENT", "effectiveTier": "SABDA", "corroboration": 1, "dangerScore": 0.44, "lastSeenSecondsAgo": 600, "reportCount": 3, "recommendedActionRank": 5 },
+  { "clusterId": "zone:north-lot", "zone": "north-lot", "severity": "OTHER", "effectiveTier": "PRATYAKSA", "corroboration": 4, "dangerScore": 0.3, "lastSeenSecondsAgo": 75, "reportCount": 9, "recommendedActionRank": 6 },
+  { "clusterId": "zone:clinic-annex", "zone": "clinic-annex", "severity": "OTHER", "effectiveTier": "ANUMANA", "corroboration": 1, "dangerScore": 0.22, "lastSeenSecondsAgo": 900, "reportCount": 2, "recommendedActionRank": null },
+  { "clusterId": "zone:depot-yard", "zone": "depot-yard", "severity": "OTHER", "effectiveTier": "SABDA", "corroboration": 1, "dangerScore": 0.18, "lastSeenSecondsAgo": 1500, "reportCount": 1, "recommendedActionRank": null }
+]

@@ -88,6 +88,40 @@ can make. Peers decay toward neutral on silence, never dropped.
 
 ---
 
+## L3 Responder Gateway
+
+### `ClusterRanker` — clusters, then a ranked list under a scarcity budget
+
+New, no reference precedent. Raw reports are folded by `zone` (the coarse localisation
+proxy) into one `SurvivorCluster` each: severity = most urgent report present, tier =
+strongest evidence present, `corroboration` = distinct origin nodes, `dangerScore` = max,
+`lastSeenSecondsAgo` = freshest.
+
+Rank order (strict, deterministic, AI plays no part):
+
+1. `severity.rank` ascending — imminent drowning first.
+2. trust descending, where `trust = corroboration + tierWeight(effectiveTier)`
+   (`PRATYAKSA` 2, `ANUMANA` 1, `SABDA` 0).
+3. `lastSeenSecondsAgo` ascending — freshest next.
+4. `dangerScore` descending — confidence as the final tiebreak.
+
+The first `actionBudget` (default **14**) clusters get `recommendedActionRank = 1..N`; the
+rest are still listed with `null`. Responders have finite boats and teams — an unbounded
+alert list is not a triage tool.
+
+### `AiAdvisor` — advisory only
+
+Layered on top of the finished ranking. `NoopAiAdvisor` is deterministic, offline, and the
+default. It never gates, delays, or reorders what `ClusterRanker` produced; the dashboard
+renders the ranked list first and folds the advice string in beside it.
+
+### Dashboard `effectiveTier`
+
+The dashboard shows `effectiveTier` (already downgraded for relay hops), never the origin's
+claimed `tier`, so a responder can tell corroborated from single-unconfirmed at a glance.
+
+---
+
 ## L0 LoRa bridge
 
 ### `MeshtasticFrame` — stopgap serial framing
