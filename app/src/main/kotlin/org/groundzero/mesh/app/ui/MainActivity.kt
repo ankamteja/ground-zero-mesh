@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -13,12 +14,16 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import org.groundzero.mesh.app.gateway.GatewayController
+import org.groundzero.mesh.app.gateway.GatewayServer
+import org.groundzero.mesh.app.node.MeshRole
 import org.groundzero.mesh.app.node.NodeScreen
 import org.groundzero.mesh.app.node.NodeViewModel
 import org.groundzero.mesh.app.permissions.MeshPermissions
@@ -39,14 +44,17 @@ class MainActivity : ComponentActivity() {
                     ) { result -> granted = result.values.all { it } }
 
                     if (!granted) {
-                        Column(Modifier.padding(16.dp)) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Nearby permissions are required.")
                             Button(onClick = {
                                 requester.launch(MeshPermissions.runtimePermissions().toTypedArray())
                             }) { Text("Grant") }
                         }
                     } else {
-                        NodeScreen(nodeViewModel)
+                        Column {
+                            NodeScreen(nodeViewModel, modifier = Modifier.padding(bottom = 0.dp))
+                            GatewayControl(active = nodeViewModel.role == MeshRole.GATEWAY)
+                        }
                     }
                 }
             }
@@ -56,5 +64,28 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         if (MeshPermissions.allGranted(this)) MeshForegroundService.start(this)
+    }
+
+    @androidx.compose.runtime.Composable
+    private fun GatewayControl(active: Boolean) {
+        var running by remember { mutableStateOf(GatewayController.isRunning) }
+        // The gateway server only makes sense in the Gateway role; hide it otherwise.
+        if (!active) return
+        Column(Modifier.padding(16.dp)) {
+            TextButton(onClick = {
+                if (running) {
+                    GatewayController.stop()
+                } else {
+                    // Cluster feed is wired to L2 later; empty until then.
+                    GatewayController.start(this@MainActivity) { emptyList() }
+                }
+                running = GatewayController.isRunning
+            }) {
+                Text(
+                    if (running) "Stop responder server (:${GatewayServer.DEFAULT_PORT})"
+                    else "Start responder server"
+                )
+            }
+        }
     }
 }

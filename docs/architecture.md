@@ -85,3 +85,61 @@ Here `SILENT_AFTER_MS = 4 minutes`, and `SILENT` and `GONE` are separate states 
 `SILENT` is reachable by a timer. A trapped, OEM-throttled phone on 4% battery is silent
 for minutes and its owner is alive; reporting it as gone is the worst error this system
 can make. Peers decay toward neutral on silence, never dropped.
+
+---
+
+## L3 Responder Gateway
+
+### `ClusterRanker` — clusters, then a ranked list under a scarcity budget
+
+New, no reference precedent. Raw reports are folded by `zone` (the coarse localisation
+proxy) into one `SurvivorCluster` each: severity = most urgent report present, tier =
+strongest evidence present, `corroboration` = distinct origin nodes, `dangerScore` = max,
+`lastSeenSecondsAgo` = freshest.
+
+Rank order (strict, deterministic, AI plays no part):
+
+1. `severity.rank` ascending — imminent drowning first.
+2. trust descending, where `trust = corroboration + tierWeight(effectiveTier)`
+   (`PRATYAKSA` 2, `ANUMANA` 1, `SABDA` 0).
+3. `lastSeenSecondsAgo` ascending — freshest next.
+4. `dangerScore` descending — confidence as the final tiebreak.
+
+The first `actionBudget` (default **14**) clusters get `recommendedActionRank = 1..N`; the
+rest are still listed with `null`. Responders have finite boats and teams — an unbounded
+alert list is not a triage tool.
+
+### `AiAdvisor` — advisory only
+
+Layered on top of the finished ranking. `NoopAiAdvisor` is deterministic, offline, and the
+default. It never gates, delays, or reorders what `ClusterRanker` produced; the dashboard
+renders the ranked list first and folds the advice string in beside it.
+
+### Dashboard `effectiveTier`
+
+The dashboard shows `effectiveTier` (already downgraded for relay hops), never the origin's
+claimed `tier`, so a responder can tell corroborated from single-unconfirmed at a glance.
+
+---
+
+## L0 LoRa bridge
+
+### `MeshtasticFrame` — stopgap serial framing
+
+New, explicitly temporary. Wraps each opaque `CompactCodec` frame as
+`[0xA5 0x5A][srcNodeNum u32][len u16][payload]` so the BLE-to-serial bridge can carry a
+sender identity and delimit frames. `Reassembler` accumulates BLE-notification chunks and
+resynchronises on the magic bytes.
+
+**Changes once the Meshtastic protobufs are linked:** a real Meshtastic `MeshPacket`
+carries `from`/`to` (32-bit node numbers) in its own header, *outside* the 233-byte
+`Data.payload`. At that point this 8-byte header goes away and
+`LoRaBridgeTransport.maxFrameBytes` rises from `233 - 8` to the full `233`.
+
+### `LoRaBridgeTransport`
+
+`Transport` over BLE GATT to the Nordic UART Service (`6e400001-…`), RX = `…0002…`,
+TX notify = `…0003…`. MTU negotiated to 247; outbound datagrams chunked to the negotiated
+payload and written one acked op at a time. Node numbers map to `NodeId` by zero-extending
+the 32-bit value into the 48-bit space. The GATT plumbing is unverified against hardware —
+every such point is marked `VERIFY(hardware)` in the source.
