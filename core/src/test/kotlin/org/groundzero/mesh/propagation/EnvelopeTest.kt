@@ -97,4 +97,27 @@ class EnvelopeTest {
     fun forwardingFailsWhenTtlExhausted() {
         assertFailsWith<IllegalStateException> { sampleEnvelope(hops = 3, ttl = 0).forwarded() }
     }
+
+    @Test
+    fun rejectsAPartialGpsFix() {
+        assertFailsWith<IllegalArgumentException> { sampleEnvelope().copy(gpsLat = 12.9f) }
+        assertFailsWith<IllegalArgumentException> { sampleEnvelope().copy(gpsLon = 77.6f) }
+    }
+
+    @Test
+    fun rejectsGpsOutOfRange() {
+        assertFailsWith<IllegalArgumentException> {
+            sampleEnvelope().copy(gpsLat = 91f, gpsLon = 0f)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            sampleEnvelope().copy(gpsLat = 0f, gpsLon = 181f)
+        }
+    }
+
+    @Test
+    fun acceptsAValidGpsFix() {
+        val e = sampleEnvelope().copy(gpsLat = 12.9716f, gpsLon = 77.5946f)
+        assertEquals(12.9716f, e.gpsLat)
+        assertEquals(77.5946f, e.gpsLon)
+    }
 }

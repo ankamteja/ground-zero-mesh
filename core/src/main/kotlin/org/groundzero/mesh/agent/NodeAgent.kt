@@ -79,6 +79,23 @@ class NodeAgent(
     var lastVector: SlmFeatureVector? = null
         private set
 
+    /**
+     * The most recent GPS fix, if the platform ever handed one to [updateGpsFix]. Read
+     * into whatever envelope is built next — [raiseSos] never waits on it. Null on a
+     * device with no signal (indoors, underground, no permission) for the whole run, which
+     * is the honest, expected state, not an error.
+     */
+    var lastGpsFix: GpsFix? = null
+        private set
+
+    data class GpsFix(val lat: Float, val lon: Float)
+
+    /** The platform layer calls this whenever a location update arrives. Never blocking,
+     *  never polled for — see [lastGpsFix]. */
+    fun updateGpsFix(lat: Float, lon: Float) {
+        lastGpsFix = GpsFix(lat, lon)
+    }
+
     /** Every envelope this agent put on the wire, newest last. Useful for the debug view. */
     val emitted = ArrayList<Envelope>()
 

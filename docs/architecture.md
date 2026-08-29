@@ -19,6 +19,7 @@ each entry also links to where the revision is logged.
 |---|---|---|---|
 | `DangerScore` EMA `alpha` | `0.35` | `DangerScore.DEFAULT_ALPHA` | "The Math Engine and the flag byte (Phase 8)" below |
 | `TrustConsensus` gain / loss | `+0.05` / `−0.35` | `TrustConsensus.TRUST_GAIN` / `TRUST_LOSS` | "Asymmetric trust decay (Phase 9)" below |
+| `CompactCodec` wire version | `0x03` | `CompactCodec.VERSION` | "GPS location: wire format landed, nothing sends one yet" below |
 
 ---
 
@@ -763,3 +764,60 @@ would be the bug, not the success.
 
 `StoreAndForward.size()` reports the buffered count for the same screen, counting only
 un-expired frames under the same per-bucket lock `drainAll` and `sweep` already take.
+
+---
+
+## GPS location: wire format landed, nothing sends one yet (2026-08-30, in progress)
+
+Requested directly: a device should be able to send a location with its SOS. The obvious
+version of that — always attach GPS — was pushed back on and revised with the user before
+any code was written, because it collides with an assumption this project has repeated at
+every layer: GPS is unreliable exactly where a victim most needs the mesh — indoors,
+underground, under rubble. A location field that is sometimes accurate and sometimes
+silently wrong is worse than no location field at all, because a responder trusts a number
+on a screen more than they trust a caveat next to it.
+
+**Decided instead: a real fix when one exists, honestly nullable, never waited on, never
+fabricated.** `raiseSos` stays synchronous — Stage 0 does not gain a dependency on GPS
+acquisition time. The zone tag and `minHops` remain the proxy for anyone without a fix; a
+real fix, when present, is additional signal, not a replacement for them.
+
+### What landed in `core`
+
+- `Envelope.gpsLat` / `gpsLon` — nullable `Float`, both-null-or-both-set enforced in the
+  constructor, range-checked `-90..90` / `-180..180`.
+- `CompactCodec` — wire version bumped `0x02` → `0x03`. New block: 1-byte presence header
+  + 8 bytes (two big-endian `f32`) inserted between the flags byte and the zone-length
+  byte. A real `f32`, not the feature vector's u8-per-slot quantisation — GPS precision
+  matters in a way flag evidence doesn't, and 8 bytes is a rounding error against the
+  233-byte LoRa budget for any realistic Stage 0/3 payload.
+- `JsonCodec` — same fields, plus a `numOrNull` reader so a JSON payload from before this
+  change (missing the keys entirely, not just holding `null`) still decodes.
+- `IncidentCluster` merge rule in `DedupCluster.ingest`: `envelope.gpsLat ?: existing.gpsLat`
+  — identical shape to how `slmSummary` is folded. A later report with no fix never blanks
+  one already held; a later report *with* a fix (Stage 3 often has a better one than
+  Stage 0) replaces it.
+- `NodeAgent.lastGpsFix` / `updateGpsFix(lat, lon)` — mirrors the existing `lastVector`
+  pattern exactly. The platform layer calls `updateGpsFix` whenever a location update
+  arrives, asynchronously, on its own schedule; whatever envelope gets built next just
+  reads whatever is currently held. This is the mechanism, not a signature change to
+  `raiseSos`, that keeps Stage 0 from ever waiting on a fix.
+
+All of the above is tested (`EnvelopeTest`, `CodecTest`, `DedupClusterTest` in
+`TrustAndClusterTest.kt`) and `./gradlew :core:test` is green.
+
+### Where it stops — deliberately flagged, not hidden
+
+**`NodeAgent.buildEnvelope` does not read `lastGpsFix`.** Every envelope this agent builds
+today carries `gpsLat = null, gpsLon = null` regardless of what `updateGpsFix` was ever
+told — the exact "component exists, is tested in isolation, but nothing in production
+calls it" pattern the Part-II audit (see the top of this file's git history / `TODO.md`)
+was built to catch. Recorded here instead of silently left for someone to rediscover.
+
+Nothing on the `app` side calls `updateGpsFix` at all yet: no location source is wired,
+`ClusterJson` does not emit the fields, the dashboard does not render them, and
+`AndroidManifest.xml`'s `ACCESS_FINE_LOCATION` is still capped `maxSdkVersion="31"` — a
+leftover from when it existed only for Nearby's old BLE-scan permission history, not for
+an actual GPS read. That cap needs removing (or a separate permission decision made) before
+a fix can be requested on API 32+. See `TODO.md`'s follow-ups and `HANDOFF.md` (repo root,
+uncommitted, written for exactly this handoff) for the complete remaining list.

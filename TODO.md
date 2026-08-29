@@ -93,10 +93,52 @@ Tick items in the same PR that does the work.
 - [x] `[A]` `IncidentCluster.reportCount` (closed 2026-08-30) — a real per-`ingest` fold
       count, distinct from `corroborators.size`. `ClusterJson`'s `reportCount` field now
       uses it.
+- [x] `[B]` hop-count "distance" surfaced on the board (closed 2026-08-30) —
+      `IncidentCluster.minHops` was already tracked but only ever buried inside the
+      `reasons` text. `ClusterJson` now emits it as its own `minHops` field; the dashboard
+      shows a `distance (hops)` row in the Inspector and a compact tag on each board row.
+
+## Follow-ups from the first real-hardware test session (2026-08-30)
+
+- [x] `[B]` missing `INTERNET` permission — `GatewayServer`'s `NanoHTTPD` raw `ServerSocket`
+      failed with `SocketException: EPERM` on every real device; Nearby itself never needed
+      it (IPC to Play Services, not a socket), so it was never in the manifest. Added.
+- [x] `[B]` NanoHTTPD auto-gzips any `text/*`/`*/json` response once the client accepts it
+      (every browser; not `curl` without `--compressed`) — `GZIPOutputStream` only flushes
+      on `finish()`, which never fires for `/events`' intentionally-never-closing SSE
+      stream, so the dashboard connected and then silently never updated. Disabled gzip
+      server-wide via `GatewayServer.useGzipWhenAccepted`.
+- [ ] `[A]`/`[B]` **GPS location, in progress, not committed.** `core` now supports an
+      optional, nullable GPS fix end to end — `Envelope.gpsLat`/`gpsLon`, `CompactCodec`
+      wire format bumped to `0x03` (8 bytes, real f32, no quantisation), `JsonCodec`,
+      `IncidentCluster` merge (`envelope.gpsLat ?: existing.gpsLat`, same rule as
+      `slmSummary`), and `NodeAgent.updateGpsFix`/`lastGpsFix` (mirrors the existing
+      `lastVector` pattern — `raiseSos` never waits on a fix). All tested and green. **But
+      `NodeAgent.buildEnvelope` does not yet read `lastGpsFix`, so nothing reaches the
+      wire** — the exact "wired but not consumed" bug this whole audit exists to catch, in
+      the one place it's honest to say so about itself. Nothing on the `app` side calls
+      `updateGpsFix` yet either; `ACCESS_FINE_LOCATION` in the manifest is currently capped
+      `maxSdkVersion="31"` (a leftover from Nearby's old BLE-scan permission history) and
+      needs that cap removed for a real fix on API 32+. See `HANDOFF.md` for the exact
+      stopping point and everything still needed (location source decision, `ClusterJson`,
+      dashboard UI, fixtures). Chosen approach, confirmed with the user: GPS **when
+      available, honestly nullable** — never required, never fabricated, falls back to the
+      zone tag / hop count. Reasoning: GPS fails exactly where victims usually are — indoors,
+      trapped, underground — so a sometimes-null-sometimes-wrong location field is worse
+      than none, because a responder trusts a number on a screen.
+- [ ] `[B]` **3D dashboard camera centers wrong, reported not investigated.** User, verbatim:
+      "in ui its centering to someother place and not to responders node." Likely the
+      canvas renderer's initial orbit target/pan origin (the `camera` object in
+      `assets/dashboard/index.html`) isn't tied to any real node — possibly the schematic
+      building's `(0,0,0)` rather than the responder's own device or the incident cluster.
 
 ## Open assumptions (name them in the deck and in UI copy)
 
-- **Localisation is not solved.** No coordinate / RSSI / trilateration code exists. The cluster key is a coarse proxy — zone tag, RSSI ordering, hop-distance, or a responder-entered zone.
+- **Localisation is not solved.** No coordinate / RSSI / trilateration code exists in the
+  shipped app path. The cluster key is a coarse proxy — zone tag, RSSI ordering,
+  hop-distance, or a responder-entered zone. `core`'s wire format now *supports* an
+  optional real GPS fix (see the follow-up above) but nothing captures or sends one yet —
+  this line stays true until that lands end to end, not just in `core`.
 - **Battery.** Continuous advertise + scan over 24–30h is real drain. Duty-cycling is a documented trade-off, not a solved number.
 
 ## Docs

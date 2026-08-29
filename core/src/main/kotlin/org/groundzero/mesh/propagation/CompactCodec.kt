@@ -20,8 +20,10 @@ import java.io.ByteArrayOutputStream
  *  35   1     hops
  *  36   1     ttl
  *  37   1     sensory flags (see SensoryFlags)
- *  38   1     addressZone length n
- *  39   n     addressZone, UTF-8
+ *  38   1     gps header: 0x00 = absent, 0x01 = present
+ *  ..   8     gpsLat + gpsLon, two f32 big-endian (absent when header is 0x00)
+ *  ..   1     addressZone length n
+ *  ..   n     addressZone, UTF-8
  *  ..   1     slm header: 0xFF = null, else length m (0..50)
  *  ..   m     slmSummary, UTF-8 (absent when header is 0xFF)
  *  ..   1     v_SLM header: 0x00 = absent, 0x01 = present
@@ -36,16 +38,19 @@ object CompactCodec : EnvelopeCodec {
 
     override val name: String = "compact"
 
-    /** 0x02 added the flag byte and the optional v_SLM block. Nothing speaks 0x01. */
-    private const val VERSION: Int = 0x02
+    /** 0x03 added the optional GPS block. 0x02 added the flag byte and v_SLM. Nothing
+     *  still on the mesh speaks 0x01. */
+    private const val VERSION: Int = 0x03
     private const val SLM_NULL: Int = 0xFF
     private const val VECTOR_ABSENT: Int = 0x00
     private const val VECTOR_PRESENT: Int = 0x01
+    private const val GPS_ABSENT: Int = 0x00
+    private const val GPS_PRESENT: Int = 0x01
     private const val SCORE_SCALE: Double = 10_000.0
     private const val SLOT_SCALE: Double = 255.0
 
-    /** Fixed part of the layout, before the variable-length tail. */
-    private const val FIXED_PREFIX = 39
+    /** Fixed part of the layout, before GPS and the variable-length tail. */
+    private const val FIXED_PREFIX = 38
 
     /**
      * Maximum application payload on a Meshtastic LoRa frame.
@@ -62,6 +67,9 @@ object CompactCodec : EnvelopeCodec {
      *  [Envelope] constructor to fail an over-budget envelope at construction time. */
     fun frameSize(envelope: Envelope): Int {
         var n = FIXED_PREFIX
+        n += 1 // gps header
+        if (envelope.gpsLat != null) n += 8
+        n += 1 // zone length
         n += envelope.addressZone.utf8Size()
         n += 1 // slm header
         if (envelope.slmSummary != null) n += envelope.slmSummary.utf8Size()
@@ -88,6 +96,14 @@ object CompactCodec : EnvelopeCodec {
         out.write(envelope.hops)
         out.write(envelope.ttl)
         out.write(envelope.flags.toInt() and 0xFF)
+
+        if (envelope.gpsLat == null) {
+            out.write(GPS_ABSENT)
+        } else {
+            out.write(GPS_PRESENT)
+            out.writeF32(envelope.gpsLat)
+            out.writeF32(envelope.gpsLon!!)
+        }
 
         val zone = envelope.addressZone.toByteArray(Charsets.UTF_8)
         out.write(zone.size)
@@ -136,6 +152,9 @@ object CompactCodec : EnvelopeCodec {
             val hops = r.u8()
             val ttl = r.u8()
             val flags = r.u8().toByte()
+            val hasGps = r.u8() == GPS_PRESENT
+            val gpsLat = if (hasGps) r.f32() else null
+            val gpsLon = if (hasGps) r.f32() else null
             val zone = String(r.bytes(r.u8()), Charsets.UTF_8)
             val slmHeader = r.u8()
             val slm = if (slmHeader == SLM_NULL) null else String(r.bytes(slmHeader), Charsets.UTF_8)
@@ -165,6 +184,8 @@ object CompactCodec : EnvelopeCodec {
                 peers = peers,
                 hops = hops,
                 ttl = ttl,
+                gpsLat = gpsLat,
+                gpsLon = gpsLon,
             )
         } catch (e: Exception) {
             throw EnvelopeDecodeException("compact decode failed: ${e.message}", e)
@@ -183,6 +204,11 @@ object CompactCodec : EnvelopeCodec {
 
     private fun ByteArrayOutputStream.writeI64(v: Long) {
         for (shift in 56 downTo 0 step 8) write(((v ushr shift) and 0xFF).toInt())
+    }
+
+    private fun ByteArrayOutputStream.writeF32(v: Float) {
+        val bits = java.lang.Float.floatToIntBits(v)
+        for (shift in 24 downTo 0 step 8) write(((bits ushr shift) and 0xFF))
     }
 
     private fun hexToBytes(hex: String): ByteArray {
@@ -211,6 +237,11 @@ object CompactCodec : EnvelopeCodec {
             var v = 0L
             repeat(8) { v = (v shl 8) or u8().toLong() }
             return v
+        }
+        fun f32(): Float {
+            var bits = 0
+            repeat(4) { bits = (bits shl 8) or u8() }
+            return java.lang.Float.intBitsToFloat(bits)
         }
         fun bytes(len: Int): ByteArray {
             check(i + len <= a.size) { "truncated: need $len at $i/${a.size}" }

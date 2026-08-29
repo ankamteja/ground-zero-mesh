@@ -35,7 +35,9 @@ object JsonCodec : EnvelopeCodec {
         rawField("views", envelope.views.joinToString(",", "[", "]") { quote(it) }); append(',')
         rawField("peers", envelope.peers.joinToString(",", "[", "]") { quote(it.canonical()) }); append(',')
         rawField("hops", envelope.hops.toString()); append(',')
-        rawField("ttl", envelope.ttl.toString())
+        rawField("ttl", envelope.ttl.toString()); append(',')
+        rawField("gpsLat", envelope.gpsLat?.toString() ?: "null"); append(',')
+        rawField("gpsLon", envelope.gpsLon?.toString() ?: "null")
         append('}')
     }.toByteArray(Charsets.UTF_8)
 
@@ -58,6 +60,8 @@ object JsonCodec : EnvelopeCodec {
                 peers = obj.strArray("peers").map { NodeId.parse(it) },
                 hops = obj.num("hops").toInt(),
                 ttl = obj.num("ttl").toInt(),
+                gpsLat = obj.numOrNull("gpsLat")?.toFloat(),
+                gpsLon = obj.numOrNull("gpsLon")?.toFloat(),
             )
         } catch (e: Exception) {
             throw EnvelopeDecodeException("json decode failed: ${e.message}", e)
@@ -95,6 +99,13 @@ private class JsonObj(val map: Map<String, Any?>) {
         is Double -> v
         is Long -> v.toDouble()
         else -> error("expected number field '$key'")
+    }
+
+    /** Null both when the key is JSON `null` and when it is absent entirely (older payload). */
+    fun numOrNull(key: String): Double? = when (val v = map[key]) {
+        is Double -> v
+        is Long -> v.toDouble()
+        else -> null
     }
 
     @Suppress("UNCHECKED_CAST")

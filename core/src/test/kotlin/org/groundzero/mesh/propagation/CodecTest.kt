@@ -82,6 +82,28 @@ class CodecTest {
     }
 
     @Test
+    fun jsonRoundTripsWithGps() {
+        val e = full.copy(gpsLat = 12.9716f, gpsLon = 77.5946f)
+        assertEquals(e, JsonCodec.decode(JsonCodec.encode(e)))
+    }
+
+    @Test
+    fun compactRoundTripsGpsExactly() {
+        // Unlike the u8-quantised feature vector, GPS rides as a real f32 — no lossy step.
+        val e = full.copy(gpsLat = 12.9716f, gpsLon = 77.5946f)
+        val decoded = CompactCodec.decode(CompactCodec.encode(e))
+        assertEquals(e.gpsLat, decoded.gpsLat)
+        assertEquals(e.gpsLon, decoded.gpsLon)
+    }
+
+    @Test
+    fun compactCarriesGpsForEightBytes() {
+        val withGps = full.copy(gpsLat = 12.9716f, gpsLon = 77.5946f)
+        assertEquals(CompactCodec.frameSize(full) + 8, CompactCodec.frameSize(withGps))
+        assertTrue(CompactCodec.fits(withGps))
+    }
+
+    @Test
     fun compactCarriesTheVectorForSeventeenBytes() {
         val withVector = full.copy(featureVector = SlmFeatureVector.ZERO)
         assertEquals(

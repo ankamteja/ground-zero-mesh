@@ -123,6 +123,8 @@ class DedupClusterTest {
         hops: Int = 1,
         slm: String? = null,
         tier: EpistemologyTier = EpistemologyTier.PRATYAKSA,
+        gpsLat: Float? = null,
+        gpsLon: Float? = null,
     ) = Envelope(
         nodeId = origin,
         saltFingerprint = "0123456789abcdef0123456789abcdef",
@@ -133,6 +135,8 @@ class DedupClusterTest {
         timestamp = timestamp,
         slmSummary = slm,
         hops = hops,
+        gpsLat = gpsLat,
+        gpsLon = gpsLon,
     )
 
     @Test
@@ -221,6 +225,28 @@ class DedupClusterTest {
         clusters.ingest(report(slm = null), relayB, 2_000)
 
         assertEquals("IMU:PINNED", clusters.clusters().single().slmSummary)
+    }
+
+    @Test
+    fun `a later report without a GPS fix never blanks the one we have`() {
+        val clusters = DedupCluster()
+        clusters.ingest(report(gpsLat = 12.9716f, gpsLon = 77.5946f), relayA, 1_000)
+        clusters.ingest(report(gpsLat = null, gpsLon = null), relayB, 2_000)
+
+        val incident = clusters.clusters().single()
+        assertEquals(12.9716f, incident.gpsLat)
+        assertEquals(77.5946f, incident.gpsLon)
+    }
+
+    @Test
+    fun `a later, better GPS fix replaces the earlier one`() {
+        val clusters = DedupCluster()
+        clusters.ingest(report(gpsLat = 12.9716f, gpsLon = 77.5946f), relayA, 1_000)
+        clusters.ingest(report(gpsLat = 12.9720f, gpsLon = 77.5950f), relayA, 2_000)
+
+        val incident = clusters.clusters().single()
+        assertEquals(12.9720f, incident.gpsLat)
+        assertEquals(77.5950f, incident.gpsLon)
     }
 
     @Test

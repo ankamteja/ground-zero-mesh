@@ -54,6 +54,18 @@ data class Envelope(
     val hops: Int = 0,
     /** <= 15. */
     val ttl: Int = 15,
+    /**
+     * A GPS fix taken at broadcast time, when one was available. Both null or both set —
+     * never partial.
+     *
+     * Deliberately not required and not waited for: GPS fails exactly where a victim most
+     * needs the mesh — indoors, underground, under rubble — and Stage 0 is synchronous, no
+     * waiting on anything before the SOS goes out. When present this is a real fix, never a
+     * fallback or an estimate; the zone tag / hop count remain the honest proxy for anyone
+     * without one. See the localisation entry in `TODO.md`'s open assumptions.
+     */
+    val gpsLat: Float? = null,
+    val gpsLon: Float? = null,
 ) {
     init {
         require(saltFingerprint.length == 32 && saltFingerprint.all { it.isHexChar() }) {
@@ -76,6 +88,9 @@ data class Envelope(
         require(peers.size <= MAX_PEERS) { "peers must be <= $MAX_PEERS, got ${peers.size}" }
         require(hops in 0..MAX_HOPS) { "hops must be 0..$MAX_HOPS, got $hops" }
         require(ttl in 0..MAX_TTL) { "ttl must be 0..$MAX_TTL, got $ttl" }
+        require((gpsLat == null) == (gpsLon == null)) { "gpsLat and gpsLon must both be null or both be set" }
+        gpsLat?.let { require(it in -90f..90f) { "gpsLat must be -90..90, got $it" } }
+        gpsLon?.let { require(it in -180f..180f) { "gpsLon must be -180..180, got $it" } }
 
         val frame = CompactCodec.frameSize(this)
         require(frame <= CompactCodec.LORA_MAX_FRAME) {

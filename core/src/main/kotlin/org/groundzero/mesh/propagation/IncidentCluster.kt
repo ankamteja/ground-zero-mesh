@@ -44,6 +44,14 @@ data class IncidentCluster(
      * nodes told it.
      */
     val reportCount: Int = 1,
+    /**
+     * A real GPS fix, when the origin device had one at broadcast time. Both null or both
+     * set. Never a fallback or an estimate — see [Envelope.gpsLat]. A later report's fix
+     * (Stage 3 often has a better one than Stage 0) replaces this; a later report with none
+     * never blanks a fix already held, same rule as [slmSummary].
+     */
+    val gpsLat: Float? = null,
+    val gpsLon: Float? = null,
 ) {
     /** Independent relayers beyond the first. Zero means single-sourced. */
     val corroborationCount: Int get() = maxOf(0, corroborators.size - 1)
@@ -101,6 +109,8 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
                 flags = envelope.flags,
                 featureVector = envelope.featureVector,
                 firstHandHeld = isFirstHand,
+                gpsLat = envelope.gpsLat,
+                gpsLon = envelope.gpsLon,
             )
         } else {
             existing.copy(
@@ -122,6 +132,8 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
                 featureVector = envelope.featureVector ?: existing.featureVector,
                 firstHandHeld = existing.firstHandHeld || isFirstHand,
                 reportCount = existing.reportCount + 1,
+                gpsLat = envelope.gpsLat ?: existing.gpsLat,
+                gpsLon = envelope.gpsLon ?: existing.gpsLon,
             )
         }
 
