@@ -427,3 +427,37 @@ within 1/255). Nothing speaks `0x01`; there are no deployed nodes to be compatib
 filling via `senseVector`; Stage 2 the projection plus flag compilation, sub-millisecond;
 Stage 3 `completeSensoryWindow` re-broadcasting with the incident's original timestamp so the
 same incident is updated rather than a second alert raised for the same person.
+
+---
+
+## Asymmetric trust decay (Phase 9)
+
+`TrustConsensus` moves from the reference implementation's 0.02 / 0.05 to **+0.05 gain,
+−0.35 loss** — a seven-to-one asymmetry.
+
+Both numbers were raised for the same reason: the timescale of a real incident. At 0.02 a
+node needed dozens of clean relays before its opinion counted for anything, which over a
+twenty-minute rescue means it never counts at all; at 0.05 loss, a node that contradicts
+first-hand observation keeps its influence for the whole event. Earning trust has to be
+possible inside one incident, and losing it has to be fast enough to matter inside one too.
+Both remain proportional — gain scales with the room left (`1 − t`, so nobody is ever fully
+believed) and loss scales with the trust held (a well-trusted node has more to lose, which is
+what makes a long con expensive rather than free).
+
+### The decay was inert until now
+
+`DedupCluster.judge` existed and was called by exactly one thing: a test. Nothing in the
+production path ever moved a trust value, so the asymmetry defended nothing. `ingest` now
+judges, but only where there are grounds to:
+
+- **Only on a relay of an incident already held.** A first sighting corroborates nothing, and
+  a node must not be rewarded merely for talking.
+- **Only a relayer, never the origin.** Severity is the victim's own statement of how fast
+  they die; penalising the person in trouble for restating it would be exactly backwards.
+- **Agreement on severity is the test.** A matching severity is corroboration; a different
+  one is conflicting telemetry. `judge` stays public so a layer with better grounds — a
+  gateway holding a responder's confirmation, say — can say so with more authority than
+  severity agreement carries.
+
+The incident itself is unaffected by a conflicting report: severity still takes the most
+urgent claim ever seen and never walks back to a calmer one.

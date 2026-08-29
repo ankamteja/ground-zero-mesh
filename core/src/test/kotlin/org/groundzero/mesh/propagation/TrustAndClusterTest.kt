@@ -30,6 +30,20 @@ class TrustConsensusTest {
     }
 
     @Test
+    fun `one contradicted report costs about seven clean relays`() {
+        val steady = TrustConsensus().apply { repeat(7) { reinforce(honest) } }
+        val betrayer = TrustConsensus().apply { penalise(liar) }
+
+        val earned = steady.trustOf(honest) - TrustConsensus.NEUTRAL_TRUST
+        val lost = TrustConsensus.NEUTRAL_TRUST - betrayer.trustOf(liar)
+        assertTrue(
+            lost >= earned,
+            "a single conflicting report should cost at least what seven clean ones earn: " +
+                "lost $lost vs earned $earned",
+        )
+    }
+
+    @Test
     fun `a node cannot out-earn its own bad behaviour`() {
         val trust = TrustConsensus()
         repeat(20) { trust.reinforce(liar) }
@@ -130,6 +144,45 @@ class DedupClusterTest {
         assertEquals(1, clusters.size, "one trapped person is one incident, however many relays")
         assertEquals(2, clusters.clusters().single().corroborators.size)
         assertEquals(1, clusters.clusters().single().corroborationCount)
+    }
+
+    @Test
+    fun `a relay that corroborates what we hold earns trust`() {
+        val clusters = DedupCluster()
+        clusters.ingest(report(), relayA, 1_000)
+        clusters.ingest(report(), relayB, 1_100)
+
+        assertTrue(clusters.trustOf(relayB) > TrustConsensus.NEUTRAL_TRUST)
+    }
+
+    @Test
+    fun `a relay that contradicts the severity we hold loses trust hard`() {
+        val clusters = DedupCluster()
+        clusters.ingest(report(severity = Severity.DROWNING_IMMINENT), relayA, 1_000)
+        clusters.ingest(report(severity = Severity.OTHER), relayB, 1_100)
+
+        val lost = TrustConsensus.NEUTRAL_TRUST - clusters.trustOf(relayB)
+        assertTrue(lost > 0.15, "conflicting telemetry should cost real standing, lost $lost")
+        // And the incident itself is unmoved: severity never walks back to a calmer claim.
+        assertEquals(Severity.DROWNING_IMMINENT, clusters.clusters().single().severity)
+    }
+
+    @Test
+    fun `the first sighting of an incident judges nobody`() {
+        val clusters = DedupCluster()
+        clusters.ingest(report(), relayA, 1_000)
+
+        assertEquals(TrustConsensus.NEUTRAL_TRUST, clusters.trustOf(relayA))
+    }
+
+    @Test
+    fun `the person in trouble is never judged for their own report`() {
+        val clusters = DedupCluster()
+        clusters.ingest(report(severity = Severity.DROWNING_IMMINENT), victim, 1_000)
+        // Their own Stage 3 enrichment, arriving from themselves.
+        clusters.ingest(report(severity = Severity.DROWNING_IMMINENT, slm = "IMU:PINNED"), victim, 2_000)
+
+        assertEquals(TrustConsensus.NEUTRAL_TRUST, clusters.trustOf(victim))
     }
 
     @Test
