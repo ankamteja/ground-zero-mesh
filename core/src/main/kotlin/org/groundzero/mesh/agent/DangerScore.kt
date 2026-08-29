@@ -10,7 +10,7 @@ import java.util.Locale
  * human-readable reason; the UI surfaces it verbatim.
  */
 class DangerScore(
-    val alpha: Double = 0.4,
+    val alpha: Double = DEFAULT_ALPHA,
     val watchThreshold: Double = 0.35,
     val alarmThreshold: Double = 0.70,
     initial: Double = 0.0,
@@ -72,4 +72,21 @@ class DangerScore(
 
     private fun fmt(pattern: String, vararg args: Any) =
         String.format(Locale.ROOT, pattern, *args)
+
+    companion object {
+        /**
+         * How much of each new signal the score takes on.
+         *
+         * 0.35 is a deliberate compromise: high enough that a violent IMU spike is visible
+         * within two or three ticks, low enough that a single noisy reading cannot alarm the
+         * node on its own. Raising it makes the mesh jumpy and chatty (every twitch crosses a
+         * threshold and triggers a heartbeat); lowering it smooths a real collapse into
+         * invisibility for the seconds that matter.
+         *
+         * Note that this is *not* on the SOS path — [NodeAgent.raiseSos] sets 1.00 directly
+         * rather than feeding the EMA, precisely so no smoothing can delay a person who told
+         * us themselves.
+         */
+        const val DEFAULT_ALPHA: Double = 0.35
+    }
 }
