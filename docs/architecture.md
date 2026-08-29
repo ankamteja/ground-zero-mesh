@@ -47,6 +47,30 @@ three-value enum. New addition: `effectiveTier` downgrades any claim held at `ho
 `SABDA` (testimony) — the envelope keeps the origin's claim in `tier`, but a downstream
 holder only has hearsay. UIs show the effective tier.
 
+### `asReceived()` — the receiver decides its own epistemic position
+
+New rule, no reference precedent. `effectiveTier` downgrades a claim held at `hops > 0`,
+which is correct but was not reachable: an envelope arrives over a link carrying whatever
+hop count the *sender* stamped, and the origin stamps zero. A first-hand SOS therefore
+arrived at its direct neighbour reading `effectiveTier == PRATYAKSA`, so the first-hand
+gate failed open on the first hop — the most common hop in the mesh. Demonstrated over a
+`SimNetwork` link before the fix, and now pinned by `FirstHandGateTest`.
+
+`Envelope.asReceived()` is called once on ingest and guarantees `hops >= 1`. The guarantee
+deliberately does not come from the hop count alone, because `hops` is a sender-controlled
+field: a node that is faulty, spoofed, or simply never increments it would otherwise
+arrive looking like direct observation. The first-hand gate is precisely the tier a bad
+actor wants to get past — it is the one that authorises the irreversible action — so the
+receiver decides from the fact that the bytes crossed a radio, not from a number the
+sender chose.
+
+### TTL counts forwards, not links
+
+The origin's own first transmission does not spend TTL, so a TTL of *n* reaches *n+1*
+links out. Pinned by `MeshPropagationTest` rather than left implicit, because it is the
+off-by-one that decides whether a TTL chosen in the field covers the building it was meant
+to.
+
 ### `Severity` vs `dangerScore`
 
 Kept strictly orthogonal (Pramana collapsed neither, and neither do we). `dangerScore` is
