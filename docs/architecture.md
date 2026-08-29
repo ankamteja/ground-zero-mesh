@@ -461,3 +461,58 @@ judges, but only where there are grounds to:
 
 The incident itself is unaffected by a conflicting report: severity still takes the most
 urgent claim ever seen and never walks back to a calmer one.
+
+---
+
+## Digital Twin, Radmin advisory and the CLI simulation (Phase 10)
+
+### The twin is schematic, and the type says so
+
+`DigitalTwin` builds a spatial state model from the ranked board. There is still no
+trilateration, no RSSI ranging and no GPS anywhere in this project, so positions are derived
+from the **zone tag alone** and then spread deterministically around that zone's ring (angle
+from the tag's hash plus the slot index) so two incidents in one zone do not stack. The same
+data always lays out the same way — a view that reshuffles on every refresh cannot be read
+under pressure — but stable is not the same as surveyed.
+
+`TwinNode.placed` is the field that keeps this honest. A zone tag that names no floor
+(`"unset"`, the app's default) produces `placed = false` and parks the node 30 m clear of the
+building rather than drawing it on the ground floor. An unplaced casualty shown as unplaced
+costs a responder a question; one drawn confidently in the wrong place costs them a search.
+
+`TwinLink` is named `carrier`, not `link`, for the same reason: all that is known is that a
+peer handed us a report. Whether it heard the origin directly or three hops away is not in
+the envelope, and drawing it as measured topology would claim more than the data supports.
+
+### The advisory cannot misbehave, structurally
+
+`TacticalSummarizer` takes an **already-ranked** board and returns **text**. It is handed the
+decision after it has been made and can only describe it — no return path exists by which it
+could reorder, promote, hide or delay anything. That is a stronger guarantee than a comment
+asking a future implementer to behave: a real 8B model dropped in behind this seam cannot
+misbehave in the one way that would matter, whatever it generates.
+
+`RadminLlmSummarizer` is the deterministic stand-in, the same role
+`DeterministicSensoryClassifier` plays at L1. It states what is *not* known as plainly as
+what is: unplaced casualties are reported as unplaced, single-sourced reports are called
+single-sourced, and every summary ends by saying the ordering was not its doing.
+
+### `IncidentCluster` now carries the flags
+
+Flags are OR-ed across every report for an incident rather than last-write-wins. A device
+that reported water and is now too damaged to report it was still in water; evidence
+accumulates and does not expire because the next frame was quieter. The feature vector is
+last-seen, since it is a snapshot rather than a claim.
+
+### `./gradlew :core:runSim`
+
+The honest demo of a disaster mesh needs three phones, two rooms and a volunteer willing to
+be trapped. `SimulationRunner` runs the same `core` code the phones run — the only
+substitution is `SimNetwork` for a radio — over an A—B—C topology with a fourth node one
+floor down, and prints every stage: the t=0 override, `v_SLM` and `Signal_t` with the
+contributing feature named, the enriched re-broadcast and its LoRa frame size, the trust
+penalty for a contradicting relay, the ranked board with reasons, the twin, and the advisory.
+`--json <path>` writes the twin snapshot for `docs/simulation_dashboard.html`.
+
+`SimulationRunnerTest` asserts it still runs and that the enriched frame still fits 233
+bytes — cheap to assert, expensive to discover on a projector.
