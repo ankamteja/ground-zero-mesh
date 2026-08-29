@@ -2,6 +2,7 @@ package org.groundzero.mesh.app.gateway
 
 import org.groundzero.mesh.agent.SensoryFlags
 import org.groundzero.mesh.gateway.RankedIncident
+import org.groundzero.mesh.gateway.TwinNode
 
 /**
  * Hand-rolled JSON for the responder dashboard.
@@ -21,12 +22,21 @@ object ClusterJson {
     /**
      * [nowMs] is required for the relative `lastSeenSecondsAgo` and does not come from
      * [RankedIncident], which carries no clock. Pass the same `now` used to rank.
+     *
+     * [twinNodes] is [org.groundzero.mesh.gateway.DigitalTwin]'s spatial projection of this
+     * same board, keyed by [org.groundzero.mesh.propagation.IncidentCluster.key] — the same
+     * shape `SimulationRunner.toJson()` already folds per node for the CLI demo. Omitted, a
+     * cluster serialises with no `floor`/`placed`/`position` fields rather than fake ones.
      */
-    fun array(ranked: List<RankedIncident>, nowMs: Long): String =
-        ranked.mapIndexed { index, incident -> obj(incident, index, nowMs) }
+    fun array(
+        ranked: List<RankedIncident>,
+        nowMs: Long,
+        twinNodes: Map<String, TwinNode> = emptyMap(),
+    ): String =
+        ranked.mapIndexed { index, incident -> obj(incident, index, nowMs, twinNodes[incident.cluster.key]) }
             .joinToString(",", "[", "]")
 
-    fun obj(r: RankedIncident, index: Int, nowMs: Long): String = buildString {
+    fun obj(r: RankedIncident, index: Int, nowMs: Long, twin: TwinNode? = null): String = buildString {
         val c = r.cluster
         append('{')
         str("clusterId", c.key); append(',')
@@ -48,6 +58,19 @@ object ClusterJson {
         bool("dispatchable", r.standing.dispatchable); append(',')
         str("flags", SensoryFlags.toHex(c.flags)); append(',')
         strArray("evidence", SensoryFlags.describe(c.flags)); append(',')
+        num("vector", "[" + (c.featureVector?.toList()?.joinToString(",") { trim(it.toDouble()) } ?: "") + "]"); append(',')
+        if (twin != null) {
+            // TwinFloor's unplaced sentinel is Int.MIN_VALUE — a real index for internal
+            // comparisons, not a number a JSON consumer should ever see or use.
+            num("floor", if (twin.placed) twin.floor.index.toString() else "null"); append(',')
+            str("floorLabel", twin.floor.label); append(',')
+            bool("placed", twin.placed); append(',')
+            num(
+                "position",
+                "{\"x\":${trim(twin.position.x)},\"y\":${trim(twin.position.y)},\"z\":${trim(twin.position.z)}}",
+            )
+            append(',')
+        }
         strArray("reasons", r.reasons)
         append('}')
     }

@@ -1,5 +1,7 @@
 package org.groundzero.mesh.app.gateway
 
+import org.groundzero.mesh.agent.SlmFeatureVector
+import org.groundzero.mesh.gateway.DigitalTwin
 import org.groundzero.mesh.gateway.ResponderRanking
 import org.groundzero.mesh.propagation.EpistemologyTier
 import org.groundzero.mesh.propagation.IncidentCluster
@@ -31,6 +33,7 @@ class ClusterJsonTest {
         ageSeconds: Long = 30,
         slm: String? = null,
         flags: Byte = 0,
+        vector: SlmFeatureVector? = null,
     ) = IncidentCluster(
         key = key,
         origin = NodeId(1L),
@@ -44,11 +47,19 @@ class ClusterJsonTest {
         lastUpdatedMs = now - ageSeconds * 1000,
         slmSummary = slm,
         flags = flags,
+        featureVector = vector,
         firstHandHeld = firstHand,
     )
 
-    private fun json(clusters: List<IncidentCluster>, budget: Int = ResponderRanking.BUDGET_ACTIONS) =
-        ClusterJson.array(ResponderRanking.rank(clusters, now, budget), now)
+    private fun json(
+        clusters: List<IncidentCluster>,
+        budget: Int = ResponderRanking.BUDGET_ACTIONS,
+        withTwin: Boolean = false,
+    ): String {
+        val ranked = ResponderRanking.rank(clusters, now, budget)
+        val twinNodes = if (withTwin) DigitalTwin.snapshot(ranked, now).nodes.associateBy { it.key } else emptyMap()
+        return ClusterJson.array(ranked, now, twinNodes)
+    }
 
     @Test
     fun emitsEveryFieldTheDashboardReads() {
@@ -142,6 +153,30 @@ class ClusterJsonTest {
         val j = json(listOf(cluster("k-1", "z", Severity.OTHER, danger = 0.7, flags = 0x21)))
         assertTrue(j.contains("\"flags\":\"0x21\""))
         assertTrue(j.contains("\"evidence\":[\"manual SOS\",\"rushing water\"]"))
+    }
+
+    @Test
+    fun serialisesTheFeatureVectorWhenTheClusterHasOne() {
+        val withVector = json(listOf(cluster("k-1", "z", Severity.OTHER, danger = 0.7, vector = SlmFeatureVector.ZERO)))
+        assertTrue(withVector.contains("\"vector\":[0.0,0.0"))
+
+        val withoutVector = json(listOf(cluster("k-2", "z", Severity.OTHER, danger = 0.6)))
+        assertTrue(withoutVector.contains("\"vector\":[]"))
+    }
+
+    @Test
+    fun foldsInTheDigitalTwinProjectionWhenGiven() {
+        val withTwin = json(
+            listOf(cluster("k-1", "floor-2-east", Severity.OTHER, danger = 0.6)),
+            withTwin = true,
+        )
+        assertTrue(withTwin.contains("\"floor\":2"))
+        assertTrue(withTwin.contains("\"floorLabel\":\"floor 2\""))
+        assertTrue(withTwin.contains("\"placed\":true"))
+        assertTrue(withTwin.contains("\"position\":{"))
+
+        val withoutTwin = json(listOf(cluster("k-2", "floor-2-east", Severity.OTHER, danger = 0.6)))
+        assertFalse("no twin passed in means no spatial fields, not fake ones", withoutTwin.contains("\"floor\":"))
     }
 
     @Test

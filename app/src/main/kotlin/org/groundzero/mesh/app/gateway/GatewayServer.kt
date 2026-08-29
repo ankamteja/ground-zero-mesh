@@ -1,6 +1,9 @@
 package org.groundzero.mesh.app.gateway
 
 import fi.iki.elonen.NanoHTTPD
+import org.groundzero.mesh.agent.MathEngine
+import org.groundzero.mesh.agent.SensoryFlags
+import org.groundzero.mesh.gateway.DigitalTwin
 import org.groundzero.mesh.gateway.RankedIncident
 import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.propagation.Severity
@@ -25,7 +28,9 @@ import java.util.concurrent.CopyOnWriteArrayList
  * The board is served straight from `core`'s [RankedIncident] — [clustersNow] is expected
  * to be `ResponderRanking.rank(gossip.clusters(), now)`. There is no app-side ranking any
  * more. The advisory line is a deterministic one-liner built here; it annotates, it never
- * reorders (see [advise]).
+ * reorders (see [advise]). Each cluster also carries `core`'s [DigitalTwin] projection
+ * (floor / position / placed), so the one dashboard has both the ranked list and the
+ * schematic 3D view from a single fetch — see [payload].
  */
 class GatewayServer(
     port: Int = DEFAULT_PORT,
@@ -74,10 +79,28 @@ class GatewayServer(
         return json("{\"ok\":true}")
     }
 
+    /**
+     * One payload for both `/snapshot` and `/events`: the ranked board, each cluster's
+     * spatial projection folded in by [DigitalTwin] (the same schematic 3D view the CLI
+     * simulation renders, now reaching the real dashboard — see `docs/architecture.md`),
+     * and the flag-bit / `v_SLM` slot labels the inspector needs, sourced from `core` rather
+     * than a second hardcoded copy.
+     */
     private fun payload(): String {
         val nowMs = now()
         val ranked = clustersNow()
-        return "{\"advice\":${quote(advise(ranked))},\"clusters\":${ClusterJson.array(ranked, nowMs)}}"
+        val twin = DigitalTwin.snapshot(ranked, nowMs)
+        val twinByKey = twin.nodes.associateBy { it.key }
+        val links = twin.links.joinToString(",") {
+            "{\"carrier\":${quote(it.carrier.canonical())},\"incidentKey\":${quote(it.incidentKey)}}"
+        }
+        val flagBits = SensoryFlags.BIT_NAMES.joinToString(",") { quote(it) }
+        val slotNames = MathEngine.slotNames().joinToString(",") { quote(it) }
+        return "{\"advice\":${quote(advise(ranked))}," +
+            "\"flagBits\":[$flagBits]," +
+            "\"slotNames\":[$slotNames]," +
+            "\"clusters\":${ClusterJson.array(ranked, nowMs, twinByKey)}," +
+            "\"links\":[$links]}"
     }
 
     /**

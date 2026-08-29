@@ -357,6 +357,23 @@ before Part II. `ClusterJson.obj` now also emits `flags` (`SensoryFlags.toHex`),
 `PeerTable.markGone`. This only reaches the gateway phone's *own* direct peer table — see
 the follow-up in `TODO.md` about the mesh-wide propagation this does not yet do.
 
+### The 3D digital twin reaches the real dashboard too (2026-08-30)
+
+`DigitalTwin.snapshot(board, nowMs)` (Phase 10) already took exactly what
+`ResponderRanking.rank` produces and nothing simulation-specific — `SimulationRunner` was
+just its only caller. `GatewayServer.payload()` now calls it too and folds each incident's
+projection (`floor`, `floorLabel`, `placed`, `position`) plus its `featureVector` straight
+into the same `ClusterJson` object, alongside a `links` array (which relay carried which
+incident) and top-level `flagBits` / `slotNames` — the same shape `SimulationRunner.toJson()`
+already used, so one fetch now carries both the ranked list and the schematic 3D view.
+
+`assets/dashboard/index.html` was rewritten around this: the CLI simulation's 3D canvas
+renderer (orbit/pan/zoom, floor slabs, transmit-pulse markers, carrier relays) now drives the
+real dashboard, with the board, inspector (flag-bit grid, `v_SLM` bars, reasons) and the
+found/safe action from the old page folded into its aside panel. `docs/simulation_dashboard.html`
+is unchanged and still exists separately — it has no live gateway to POST `/resolve` against,
+so it stays a read-only offline artefact for `./gradlew :core:runSim`.
+
 ---
 
 ## Wiring the mesh stack into the device (Phase 7, Step 2)

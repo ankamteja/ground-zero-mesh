@@ -1,157 +1,201 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Ground-Zero Mesh — Responder View</title>
+<title>Ground-Zero Mesh</title>
 <style>
   :root {
-    --bg: #f6f7f7; --panel: #ffffff; --border: #e2e4e4; --text: #191c1b;
-    --muted: #5c6260; --accent: #2f6f4f;
-    --drown: #cf3b30; --trap: #b26b00; --other: #3a7d44;
-    --shadow: 0 1px 2px rgba(0,0,0,.05);
+    --bg: #f3f5f6; --panel: #ffffff; --line: #dde2e5; --text: #14181c; --dim: #5b646c;
+    --accent: #157567;
+    --drown: #1f6fa8; --entrap: #a66c15; --other: #5b646c; --unplaced: #a83a34;
   }
   html[data-theme="dark"] {
-    --bg: #0e1110; --panel: #161a18; --border: #262b28; --text: #e7eae8;
-    --muted: #99a09d; --accent: #4a9a72;
-    --drown: #e2564a; --trap: #d08a2c; --other: #57a163;
-    --shadow: none;
+    --bg: #0b0d10; --panel: #12161b; --line: #232931; --text: #dfe4e8; --dim: #838d97;
+    --accent: #3fbfab;
+    --drown: #4f9fdb; --entrap: #dba043; --other: #838d97; --unplaced: #d9615a;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font: 13px/1.5 ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
   }
   header {
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-    padding: 12px 18px; background: var(--panel); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 16px; padding: 10px 16px;
+    background: var(--panel); border-bottom: 1px solid var(--line);
   }
-  header h1 {
-    font-size: 13px; letter-spacing: .12em; text-transform: uppercase;
-    margin: 0; font-weight: 600;
-  }
+  .brand { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+  .brand .sub { color: var(--dim); font-weight: 400; letter-spacing: 0.04em; margin-left: 8px; text-transform: none; }
   .spacer { flex: 1; }
-  .status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-  .dot.live { background: var(--other); }
-  .dot.down { background: var(--drown); }
+  .status { display: flex; align-items: center; gap: 7px; color: var(--dim); font-size: 12px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); flex: none; }
+  .dot.live { background: var(--accent); }
+  .dot.down { background: var(--unplaced); }
   button.toggle {
-    font: inherit; font-size: 12px; color: var(--text); background: transparent;
-    border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer;
+    font: inherit; font-size: 11px; color: var(--text); background: transparent;
+    border: 1px solid var(--line); padding: 5px 9px; cursor: pointer;
   }
-  .note {
-    padding: 8px 18px; font-size: 12px; color: var(--muted);
-    border-bottom: 1px solid var(--border); background: var(--panel);
+  button.toggle:hover { border-color: var(--accent); color: var(--accent); }
+  button:focus-visible, .incident:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+
+  main {
+    display: grid; grid-template-columns: minmax(0, 1fr) 380px;
+    height: calc(100vh - 66px); min-height: 480px;
   }
-  main { padding: 18px; max-width: 1200px; margin: 0 auto; }
-  .panel {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-    padding: 14px 16px; box-shadow: var(--shadow); margin-bottom: 18px;
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; height: auto; } #stage { height: 46vh; } }
+
+  #stage { position: relative; border-right: 1px solid var(--line); height: 100%; min-height: 360px; }
+  canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  .hint, .caveat-chip {
+    position: absolute; color: var(--dim); font-size: 11px;
+    background: color-mix(in srgb, var(--bg) 82%, transparent); padding: 5px 8px; border: 1px solid var(--line);
   }
-  .panel h2 {
-    font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
-    margin: 0 0 10px; font-weight: 600;
+  .hint { left: 12px; bottom: 12px; }
+  .caveat-chip { right: 12px; top: 12px; max-width: 260px; text-align: right; }
+
+  aside { padding: 14px 16px 40px; overflow-y: auto; height: 100%; }
+  section { margin-bottom: 20px; }
+  section:last-child { margin-bottom: 0; }
+  h2 {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.09em;
+    color: var(--dim); font-weight: 700; margin: 0 0 8px; display: flex; align-items: baseline; gap: 8px;
   }
-  .perimeter { display: flex; flex-wrap: wrap; gap: 8px; }
+  h2 .tag { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--dim); opacity: 0.75; }
+
+  .advice { margin: 0; color: var(--text); font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; }
+
+  .perimeter { display: flex; flex-wrap: wrap; gap: 6px; }
   .zonechip {
-    display: flex; align-items: center; gap: 8px; padding: 6px 10px;
-    border: 1px solid var(--border); border-radius: 8px; font-size: 13px;
+    display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid var(--line); font-size: 11.5px;
   }
-  .zonechip .bar { width: 4px; height: 18px; border-radius: 2px; }
-  .advice { color: var(--text); font-size: 13px; }
-  .advice .tag {
-    font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--muted); display: block; margin-bottom: 4px;
+  .zonechip .bar { width: 3px; height: 14px; flex: none; }
+  .zonechip .floor { color: var(--dim); }
+
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; font-size: 12px; }
+  .row span:first-child { color: var(--dim); }
+  .row span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .incident {
+    border: 1px solid var(--line); border-left-width: 3px; padding: 8px 9px; margin-bottom: 6px; cursor: pointer;
   }
-  .grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px;
-  }
-  .card {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-    padding: 12px 14px; box-shadow: var(--shadow);
-  }
-  .card.dim { opacity: .5; }
-  .card .top { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
-  .rank {
-    font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15px;
-    min-width: 26px;
-  }
-  .rank.out { color: var(--muted); font-weight: 400; }
-  .zone { font-weight: 600; }
-  .sev {
-    margin-left: auto; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 5px;
-  }
-  .sev .mark { font-size: 11px; }
-  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
-  .metrics div { display: flex; justify-content: space-between; font-size: 12px; }
-  .metrics .k { color: var(--muted); }
-  .metrics .v { font-variant-numeric: tabular-nums; }
-  .tier { border-bottom: 1px dotted var(--muted); cursor: help; }
-  .detail { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
-  .standing { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
-  .flags { margin-bottom: 4px; font-size: 12px; color: var(--muted); }
-  .flags .hex { font-variant-numeric: tabular-nums; color: var(--text); }
-  .reasons { margin: 0; padding-left: 16px; color: var(--muted); font-size: 12px; }
-  .reasons li { margin: 1px 0; }
-  .outnote { margin-top: 8px; font-size: 11px; color: var(--muted); }
+  .incident:hover { background: var(--panel); }
+  .incident.selected { background: var(--panel); border-color: var(--dim); border-left-color: var(--dim); }
+  .incident.dim { opacity: 0.5; }
+  .sev-DROWNING_IMMINENT { border-left-color: var(--drown); }
+  .sev-STRUCTURAL_ENTRAPMENT { border-left-color: var(--entrap); }
+  .sev-OTHER { border-left-color: var(--other); }
+  .incident .top { display: flex; align-items: baseline; gap: 7px; margin-bottom: 4px; }
+  .incident .rank { font-weight: 700; min-width: 20px; font-variant-numeric: tabular-nums; }
+  .incident .rank.out { color: var(--dim); font-weight: 400; }
+  .incident .origin { font-weight: 600; }
+  .incident .sev { margin-left: auto; font-size: 11px; color: var(--dim); }
+  .incident .meta { display: flex; justify-content: space-between; color: var(--dim); font-size: 11px; }
+  .unplaced-tag { color: var(--unplaced); }
+
+  .empty { color: var(--dim); }
+
+  .bits { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; margin: 6px 0; }
+  .bit { border: 1px solid var(--line); padding: 4px 0; text-align: center; font-size: 10px; color: var(--dim); }
+  .bit.on { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); border-color: var(--accent); color: var(--text); }
+  .caveat { color: var(--dim); font-size: 11.5px; }
+
+  .vec { display: grid; grid-template-columns: 92px 1fr 38px; gap: 6px; align-items: center; font-size: 11px; margin: 2px 0; }
+  .vec .bar { height: 6px; background: var(--line); }
+  .vec .bar > i { display: block; height: 100%; background: var(--accent); }
+  .vec span:last-child { text-align: right; font-variant-numeric: tabular-nums; color: var(--dim); }
+
+  ul.reasons { margin: 4px 0 0; padding-left: 15px; color: var(--dim); font-size: 11.5px; }
+  ul.reasons li { margin: 2px 0; }
+
   .found-btn {
-    margin-top: 10px; width: 100%; padding: 7px; font-size: 12px; font-weight: 600;
-    border: 1px solid var(--border); border-radius: 6px; background: var(--panel);
-    color: var(--text); cursor: pointer;
+    margin-top: 14px; width: 100%; padding: 8px; font: inherit; font-size: 12px; font-weight: 700;
+    letter-spacing: 0.03em; text-transform: uppercase; border: 1px solid var(--accent); background: transparent;
+    color: var(--accent); cursor: pointer;
   }
-  .found-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-  .found-btn:disabled { opacity: 0.6; cursor: default; }
-  footer { padding: 14px 18px; color: var(--muted); font-size: 12px; text-align: center; }
-  @media (max-width: 480px) { .metrics { grid-template-columns: 1fr; } }
+  .found-btn:hover:not(:disabled) { background: var(--accent); color: var(--bg); }
+  .found-btn:disabled { opacity: 0.55; cursor: default; }
+  .found-btn.done { border-color: var(--dim); color: var(--dim); background: transparent; }
+
+  footer {
+    display: flex; gap: 14px; align-items: center; padding: 8px 16px; color: var(--dim); font-size: 11px;
+    border-top: 1px solid var(--line); background: var(--panel);
+  }
+  footer .spacer { flex: 1; }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.001ms !important; } }
 </style>
 </head>
 <body>
 <header>
-  <h1>Ground-Zero Mesh — Responder View</h1>
+  <div class="brand">Ground-Zero Mesh<span class="sub">responder gateway</span></div>
   <div class="spacer"></div>
   <div class="status"><span class="dot" id="dot"></span><span id="conn">connecting…</span></div>
   <div class="status" id="updated">—</div>
   <button class="toggle" id="themeBtn">light</button>
 </header>
 
-<div class="note">Zones are coarse proxies, not coordinates. Localisation is approximate — treat ordering, not position, as the signal.</div>
-
 <main>
-  <div class="panel">
-    <h2>Advisory (non-binding)</h2>
-    <div class="advice"><span class="tag">AI summary — does not change the ranking</span><span id="advice">—</span></div>
+  <div id="stage">
+    <canvas id="view"></canvas>
+    <div class="hint">drag orbit &middot; shift-drag pan &middot; wheel zoom &middot; tap a marker</div>
+    <div class="caveat-chip">positions are schematic — from the zone tag alone, never measured</div>
   </div>
 
-  <div class="panel">
-    <h2>Perimeter</h2>
-    <div class="perimeter" id="perimeter"></div>
-  </div>
+  <aside>
+    <section>
+      <h2>Advisory <span class="tag">non-binding — cannot reorder the board</span></h2>
+      <p class="advice" id="advice">&mdash;</p>
+    </section>
 
-  <div class="panel">
-    <h2>Ranked clusters</h2>
-    <div class="grid" id="grid"></div>
-  </div>
+    <section>
+      <h2>Perimeter</h2>
+      <div class="perimeter" id="perimeter"></div>
+    </section>
+
+    <section>
+      <h2>Board</h2>
+      <div id="board"></div>
+    </section>
+
+    <section>
+      <h2>Inspector</h2>
+      <div id="inspector" class="empty">Select an incident.</div>
+    </section>
+  </aside>
 </main>
 
-<footer id="foot">no data</footer>
+<footer id="foot">
+  <span id="footCounts">no data</span>
+  <span class="spacer"></span>
+  <span>zones are coarse proxies, not coordinates — treat ordering, not position, as the signal</span>
+</footer>
 
 <script>
 (function () {
   "use strict";
 
   var SEV = {
-    DROWNING_IMMINENT: { label: "drowning", mark: "▲", color: "var(--drown)", order: 0 },
-    STRUCTURAL_ENTRAPMENT: { label: "entrapment", mark: "■", color: "var(--trap)", order: 1 },
-    OTHER: { label: "other", mark: "●", color: "var(--other)", order: 2 }
+    DROWNING_IMMINENT: { label: "drowning imminent", mark: "▲", var: "--drown", order: 0 },
+    STRUCTURAL_ENTRAPMENT: { label: "structural entrapment", mark: "■", var: "--entrap", order: 1 },
+    OTHER: { label: "other", mark: "●", var: "--other", order: 2 }
   };
   var TIER = {
     PRATYAKSA: "First-hand: a node observed this directly.",
     ANUMANA: "Inferred: derived from sensor signals, not observed directly.",
     SABDA: "Relayed: heard from another node, not yet confirmed."
   };
+  var REDUCE_MOTION = (function () {
+    try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; }
+  })();
 
   var $ = function (id) { return document.getElementById(id); };
-  var es = null, pollTimer = null, lastGood = 0;
+  var es = null, pollTimer = null, lastGood = 0, usingFixtures = false;
+  var payload = { advice: "", flagBits: [], slotNames: [], clusters: [], links: [] };
+  var selectedKey = null;
+
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
 
   // ---- theme ----
   try {
@@ -198,9 +242,10 @@
     if (pollTimer) return;
     var tick = function () {
       fetch("/snapshot", { cache: "no-store" })
-        .then(function (r) { return r.text(); })
+        .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
         .then(function (t) { setConn("live", "live (poll)"); ingest(t); })
         .catch(function () {
+          if (usingFixtures) { setConn("", "preview (fixtures.json) — retrying gateway"); return; }
           setConn("down", "no gateway connection");
           if (Date.now() - lastGood > 8000) tryFixtures();
         });
@@ -213,101 +258,141 @@
     fetch("fixtures.json", { cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function (j) {
+        usingFixtures = true;
         setConn("", "preview (fixtures.json)");
-        render(Array.isArray(j) ? { advice: "Preview data.", clusters: j } : j);
+        render(j);
       })
       .catch(function () {});
   }
 
   function ingest(text) {
-    var payload;
-    try { payload = JSON.parse(text); } catch (e) { return; }
+    var data;
+    try { data = JSON.parse(text); } catch (e) { return; }
+    usingFixtures = false;
     lastGood = Date.now();
-    render(payload);
+    render(data);
   }
 
   // ---- render ----
-  function render(payload) {
-    var clusters = (payload && payload.clusters) || [];
-    // Defensive re-sort: severity, then trust (corroboration + tier), then recency.
-    var tierRank = { PRATYAKSA: 2, ANUMANA: 1, SABDA: 0 };
-    clusters = clusters.slice().sort(function (a, b) {
-      var sa = (SEV[a.severity] || SEV.OTHER).order, sb = (SEV[b.severity] || SEV.OTHER).order;
-      if (sa !== sb) return sa - sb;
-      var ta = a.corroboration + (tierRank[a.effectiveTier] || 0);
-      var tb = b.corroboration + (tierRank[b.effectiveTier] || 0);
-      if (ta !== tb) return tb - ta;
-      return (a.lastSeenSecondsAgo || 0) - (b.lastSeenSecondsAgo || 0);
-    });
+  function render(data) {
+    payload = {
+      advice: (data && data.advice) || "",
+      flagBits: (data && data.flagBits) || [],
+      slotNames: (data && data.slotNames) || [],
+      clusters: (data && data.clusters) || [],
+      links: (data && data.links) || []
+    };
 
-    $("advice").textContent = (payload && payload.advice) || "—";
+    $("advice").textContent = payload.advice || "—";
     $("updated").textContent = "updated " + new Date().toLocaleTimeString();
 
-    renderPerimeter(clusters);
-    renderCards(clusters);
+    renderPerimeter();
+    renderBoard();
+    renderInspector();
+    drawScene(REDUCE_MOTION ? 0 : performance.now());
 
-    var inBudget = clusters.filter(function (c) { return c.recommendedActionRank != null; }).length;
-    $("foot").textContent = clusters.length + " clusters · " + inBudget + " within action budget";
+    var inBudget = payload.clusters.filter(function (c) { return c.recommendedActionRank != null; }).length;
+    $("footCounts").textContent = payload.clusters.length + " cluster(s) · " + inBudget + " within action budget";
   }
 
-  function renderPerimeter(clusters) {
+  function renderPerimeter() {
     var byZone = {};
-    clusters.forEach(function (c) {
+    payload.clusters.forEach(function (c) {
       var cur = byZone[c.zone];
       var o = (SEV[c.severity] || SEV.OTHER).order;
-      if (cur == null || o < cur) byZone[c.zone] = o;
+      if (!cur || o < cur.order) byZone[c.zone] = { order: o, floorLabel: c.floorLabel, placed: c.placed };
     });
     var el = $("perimeter");
     el.innerHTML = "";
     Object.keys(byZone).forEach(function (zone) {
-      var order = byZone[zone];
-      var sev = Object.keys(SEV).filter(function (k) { return SEV[k].order === order; })[0];
+      var info = byZone[zone];
+      var sevKey = Object.keys(SEV).filter(function (k) { return SEV[k].order === info.order; })[0];
       var chip = document.createElement("div");
       chip.className = "zonechip";
-      chip.innerHTML = '<span class="bar" style="background:' + SEV[sev].color + '"></span>' +
-                       '<span>' + esc(zone) + '</span>';
+      chip.innerHTML = '<span class="bar" style="background:' + cssVar(SEV[sevKey].var) + '"></span>' +
+        '<span>' + esc(zone) + '</span>' +
+        '<span class="floor">' + esc(info.placed ? info.floorLabel : "unplaced") + '</span>';
       el.appendChild(chip);
     });
     if (!Object.keys(byZone).length) el.textContent = "no zones reporting";
   }
 
-  function renderCards(clusters) {
-    var grid = $("grid");
-    grid.innerHTML = "";
-    if (!clusters.length) { grid.textContent = "no clusters"; return; }
-    clusters.forEach(function (c) {
+  function renderBoard() {
+    var el = $("board");
+    if (!payload.clusters.length) { el.innerHTML = '<div class="empty">No clusters in this snapshot.</div>'; return; }
+    el.innerHTML = payload.clusters.map(function (c) {
       var sev = SEV[c.severity] || SEV.OTHER;
       var inBudget = c.recommendedActionRank != null;
-      var card = document.createElement("div");
-      card.className = "card" + (inBudget ? "" : " dim");
-      card.innerHTML =
+      return '<div class="incident sev-' + c.severity + (c.clusterId === selectedKey ? " selected" : "") +
+        (inBudget ? "" : " dim") + '" data-key="' + esc(c.clusterId) + '" tabindex="0">' +
         '<div class="top">' +
-          '<span class="rank ' + (inBudget ? "" : "out") + '">' + (inBudget ? "#" + c.recommendedActionRank : "—") + '</span>' +
-          '<span class="zone">' + esc(c.zone) + '</span>' +
-          '<span class="sev" style="color:' + sev.color + '"><span class="mark">' + sev.mark + '</span>' + sev.label + '</span>' +
+          '<span class="rank' + (inBudget ? "" : " out") + '">' + (inBudget ? "#" + c.recommendedActionRank : "—") + '</span>' +
+          '<span class="origin">' + esc(c.origin) + '</span>' +
+          '<span class="sev">' + sev.mark + ' ' + sev.label + '</span>' +
         '</div>' +
-        '<div class="metrics">' +
-          kv("corroboration", "×" + c.corroboration) +
-          kv("danger score", pct(c.dangerScore)) +
-          kv("evidence", '<span class="tier" title="' + esc(TIER[c.effectiveTier] || "") + '">' + tierLabel(c.effectiveTier) + '</span>') +
-          kv("last seen", ago(c.lastSeenSecondsAgo)) +
-          kv("reports folded", String(c.reportCount)) +
+        '<div class="meta">' +
+          '<span>' + esc(c.zone) + (c.placed ? " · " + esc(c.floorLabel) : '') +
+            (c.placed ? "" : ' <span class="unplaced-tag">unplaced</span>') + '</span>' +
+          '<span>' + c.flags + '</span>' +
         '</div>' +
-        detail(c) +
-        (inBudget ? "" : '<div class="outnote">outside the action budget — listed, not prioritised</div>') +
-        foundButton(c);
-      grid.appendChild(card);
+      '</div>';
+    }).join("");
+
+    el.querySelectorAll(".incident").forEach(function (card) {
+      card.addEventListener("click", function () { select(card.dataset.key); });
+      card.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(card.dataset.key); }
+      });
     });
   }
 
-  /**
-   * Only ever reaches this gateway's own direct peer table (see GatewayServer's /resolve
-   * doc) — a victim known only through relay is not affected by this button, so a wrong tap
-   * on a multi-hop entry is a silent no-op rather than a false "resolved" the mesh disagrees
-   * with.
-   */
-  function foundButton(c) {
-    return '<button class="found-btn" data-origin="' + esc(c.origin) + '">found / safe</button>';
+  function renderInspector() {
+    var el = $("inspector");
+    var c = payload.clusters.find(function (x) { return x.clusterId === selectedKey; });
+    if (!c) {
+      el.className = "empty";
+      el.textContent = "Select an incident.";
+      return;
+    }
+    el.className = "";
+
+    var flagsInt = parseInt(c.flags, 16) || 0;
+    var bits = (payload.flagBits || []).map(function (name, i) {
+      return '<div class="bit ' + ((flagsInt >> i) & 1 ? "on" : "") + '" title="bit ' + i + ': ' + esc(name) + '">' + i + '</div>';
+    }).join("");
+
+    var vector = (c.vector || []).map(function (v, i) {
+      var name = (payload.slotNames || [])[i] || ("slot:" + i);
+      return '<div class="vec"><span>' + esc(name) + '</span>' +
+        '<span class="bar"><i style="width:' + Math.round(v * 100) + '%"></i></span>' +
+        '<span>' + v.toFixed(2) + '</span></div>';
+    }).join("");
+
+    var reasons = (c.reasons || []).map(function (r) { return "<li>" + esc(r) + "</li>"; }).join("");
+
+    el.innerHTML =
+      '<div class="row"><span>origin</span><span>' + esc(c.origin) + '</span></div>' +
+      '<div class="row"><span>zone</span><span>' + esc(c.zone) + '</span></div>' +
+      '<div class="row"><span>standing</span><span>' + esc(c.standing) + '</span></div>' +
+      '<div class="row"><span title="' + esc(TIER[c.effectiveTier] || "") + '">evidence tier</span><span>' + tierLabel(c.effectiveTier) + '</span></div>' +
+      '<div class="row"><span>danger score</span><span>' + pct(c.dangerScore) + '</span></div>' +
+      '<div class="row"><span>corroboration</span><span>×' + c.corroboration + '</span></div>' +
+      '<div class="row"><span>last seen</span><span>' + ago(c.lastSeenSecondsAgo) + '</span></div>' +
+      '<div class="row"><span>position</span><span>' + (c.placed ? esc(c.floorLabel) + " (schematic)" : "unplaced") + '</span></div>' +
+
+      '<h2 style="margin-top:14px">Flag byte ' + esc(c.flags) + '</h2>' +
+      '<div class="bits">' + bits + '</div>' +
+      '<div class="caveat">' + ((c.evidence && c.evidence.length) ? esc(c.evidence.join(", ")) : "nothing asserted") + '</div>' +
+
+      '<h2 style="margin-top:14px">v_SLM</h2>' +
+      (vector || '<div class="empty">No vector on this report — only the Stage 3 broadcast carries one.</div>') +
+
+      '<h2 style="margin-top:14px">Why it ranks here</h2>' +
+      '<ul class="reasons">' + reasons + '</ul>' +
+
+      '<button class="found-btn" id="foundBtn">found / safe</button>';
+
+    $("foundBtn").addEventListener("click", function () { markFound(c.origin, this); });
   }
 
   function markFound(origin, btn) {
@@ -317,6 +402,7 @@
       .then(function (r) {
         if (!r.ok) throw new Error("bad response");
         btn.textContent = "marked found";
+        btn.className = "found-btn done";
       })
       .catch(function () {
         btn.disabled = false;
@@ -324,28 +410,13 @@
       });
   }
 
-  document.addEventListener("click", function (ev) {
-    var btn = ev.target.closest && ev.target.closest(".found-btn");
-    if (btn) markFound(btn.getAttribute("data-origin"), btn);
-  });
-
-  function kv(k, v) { return '<div><span class="k">' + k + '</span><span class="v">' + v + '</span></div>'; }
-  function detail(c) {
-    var standing = c.standing ? '<div class="standing">' + esc(c.standing) + '</div>' : "";
-    var flags = "";
-    if (Array.isArray(c.evidence) && c.evidence.length) {
-      flags = '<div class="flags"><span class="hex">' + esc(c.flags || "") + '</span> — ' +
-        c.evidence.map(esc).join(", ") + '</div>';
-    }
-    var reasons = "";
-    if (Array.isArray(c.reasons) && c.reasons.length) {
-      reasons = '<ul class="reasons">' + c.reasons.map(function (r) {
-        return '<li>' + esc(r) + '</li>';
-      }).join("") + '</ul>';
-    }
-    if (!standing && !flags && !reasons) return "";
-    return '<div class="detail">' + standing + flags + reasons + '</div>';
+  function select(key) {
+    selectedKey = key;
+    renderBoard();
+    renderInspector();
+    drawScene(REDUCE_MOTION ? 0 : performance.now());
   }
+
   function pct(d) { return Math.round((d || 0) * 100) + "%"; }
   function ago(s) {
     s = s || 0;
@@ -362,8 +433,235 @@
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // A small 3D projector on a 2D canvas. Deliberately not Three.js — this asset
+  // ships inside the app and must render with no build step, no CDN, no network:
+  // there is no internet at the perimeter. Perspective projection, painter's-
+  // algorithm sorting and orbit controls are enough for a schematic view.
+  // ---------------------------------------------------------------------------
+  var camera = { yaw: -0.7, pitch: 0.42, dist: 34, panX: 0, panY: 4.5 };
+  var STOREY = 3.0, HALF = 9;
+
+  function project(p, w, h) {
+    var cy = Math.cos(camera.yaw), sy = Math.sin(camera.yaw);
+    var cp = Math.cos(camera.pitch), sp = Math.sin(camera.pitch);
+    var x = p.x, y = p.y - camera.panY, z = p.z;
+    var x1 = x * cy - z * sy;
+    var z1 = x * sy + z * cy;
+    var y1 = y * cp + z1 * sp;
+    var z2 = z1 * cp - y * sp + camera.dist;
+    if (z2 < 1) return null;
+    var f = (Math.min(w, h) * 1.15) / z2;
+    return { x: w / 2 + (x1 + camera.panX) * f, y: h / 2 - y1 * f, depth: z2, scale: f };
+  }
+
+  var canvas = $("view");
+  var ctx = canvas.getContext("2d");
+
+  function resize() {
+    var rect = canvas.parentElement.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = Math.max(rect.height, 360) * dpr;
+    canvas.style.height = Math.max(rect.height, 360) + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawScene(REDUCE_MOTION ? 0 : performance.now());
+  }
+
+  function floorsPresent() {
+    var placed = payload.clusters.filter(function (c) { return c.placed; }).map(function (c) { return c.floor; });
+    if (!placed.length) return [0];
+    var lo = Math.min.apply(null, [0].concat(placed)), hi = Math.max.apply(null, [0].concat(placed));
+    var out = [];
+    for (var i = lo; i <= hi; i++) out.push(i);
+    return out;
+  }
+
+  function drawScene(now) {
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h) return;
+    ctx.clearRect(0, 0, w, h);
+    var line = cssVar("--line"), dim = cssVar("--dim"), text = cssVar("--text"), accent = cssVar("--accent"), unplaced = cssVar("--unplaced");
+    var items = [];
+
+    floorsPresent().forEach(function (f) {
+      var y = f * STOREY;
+      var corners = [
+        { x: -HALF, y: y, z: -HALF }, { x: HALF, y: y, z: -HALF },
+        { x: HALF, y: y, z: HALF }, { x: -HALF, y: y, z: HALF }
+      ].map(function (p) { return project(p, w, h); });
+      if (corners.some(function (c) { return !c; })) return;
+      var depth = corners.reduce(function (a, c) { return a + c.depth; }, 0) / 4;
+      var owner = payload.clusters.find(function (c) { return c.placed && c.floor === f; });
+      var label = owner ? owner.floorLabel : (f === 0 ? "ground" : f > 0 ? "floor " + f : "basement " + Math.abs(f));
+      items.push({ depth: depth, kind: "slab", corners: corners, label: label });
+    });
+
+    payload.clusters.forEach(function (c) {
+      var p = project(c.position, w, h);
+      if (!p) return;
+      var ground = project({ x: c.position.x, y: 0, z: c.position.z }, w, h);
+      items.push({ depth: p.depth, kind: "node", p: p, ground: ground, c: c, now: now });
+    });
+
+    var carriers = [];
+    payload.links.forEach(function (l) { if (carriers.indexOf(l.carrier) < 0) carriers.push(l.carrier); });
+    carriers.forEach(function (carrier, i) {
+      var a = (i / Math.max(1, carriers.length)) * Math.PI * 2;
+      var pos = { x: Math.cos(a) * (HALF + 5), y: 0, z: Math.sin(a) * (HALF + 5) };
+      var p = project(pos, w, h);
+      if (!p) return;
+      payload.links.filter(function (l) { return l.carrier === carrier; }).forEach(function (link) {
+        var target = payload.clusters.find(function (c) { return c.clusterId === link.incidentKey; });
+        if (!target) return;
+        var tp = project(target.position, w, h);
+        if (!tp) return;
+        items.push({ depth: Math.max(p.depth, tp.depth) + 0.1, kind: "link", from: p, to: tp, now: now });
+      });
+      items.push({ depth: p.depth, kind: "carrier", p: p, carrier: carrier });
+    });
+
+    items.sort(function (a, b) { return b.depth - a.depth; });
+    items.forEach(function (item) { paint(item, line, dim, text, accent, unplaced); });
+  }
+
+  function paint(item, line, dim, text, accent, unplaced) {
+    if (item.kind === "slab") {
+      ctx.strokeStyle = line;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      item.corners.forEach(function (c, i) { i ? ctx.lineTo(c.x, c.y) : ctx.moveTo(c.x, c.y); });
+      ctx.closePath();
+      ctx.stroke();
+      ctx.fillStyle = dim;
+      ctx.font = "11px ui-monospace, monospace";
+      var front = item.corners.reduce(function (a, c) { return c.depth < a.depth ? c : a; });
+      ctx.fillText(item.label, front.x + 6, front.y + 12);
+      return;
+    }
+    if (item.kind === "link") {
+      ctx.strokeStyle = line;
+      ctx.setLineDash([3, 4]);
+      ctx.beginPath();
+      ctx.moveTo(item.from.x, item.from.y);
+      ctx.lineTo(item.to.x, item.to.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      var t = (item.now % 2600) / 2600;
+      ctx.fillStyle = accent;
+      ctx.beginPath();
+      ctx.arc(item.from.x + (item.to.x - item.from.x) * t, item.from.y + (item.to.y - item.from.y) * t, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    if (item.kind === "carrier") {
+      ctx.strokeStyle = line;
+      ctx.beginPath();
+      ctx.arc(item.p.x, item.p.y, 5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = dim;
+      ctx.font = "10px ui-monospace, monospace";
+      ctx.fillText(item.carrier + " (relay, position unknown)", item.p.x + 9, item.p.y + 3);
+      return;
+    }
+
+    var p = item.p, c = item.c;
+    var colour = c.placed ? cssVar(SEV[c.severity] ? SEV[c.severity].var : "--other") : unplaced;
+
+    if (item.ground) {
+      ctx.strokeStyle = line;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(item.ground.x, item.ground.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = line;
+      ctx.fillRect(item.ground.x - 2, item.ground.y - 2, 4, 4);
+    }
+    var r = Math.max(5, 0.34 * p.scale);
+
+    var phase = (item.now % 2200) / 2200;
+    ctx.strokeStyle = colour;
+    ctx.globalAlpha = 0.35 * (1 - phase);
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y, r + phase * r * 5, (r + phase * r * 5) * 0.42, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = colour;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (c.clusterId === selectedKey) {
+      ctx.strokeStyle = text;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r + 5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = c.placed ? dim : unplaced;
+    ctx.font = "10px ui-monospace, monospace";
+    ctx.fillText(c.origin + (c.placed ? "" : "  UNPLACED"), p.x + r + 6, p.y + 3);
+    c._screen = p;
+  }
+
+  // ---- interaction ----
+  var dragging = null;
+  canvas.addEventListener("mousedown", function (e) {
+    dragging = { x: e.clientX, y: e.clientY, pan: e.shiftKey, moved: false };
+  });
+  window.addEventListener("mousemove", function (e) {
+    if (!dragging) return;
+    var dx = e.clientX - dragging.x, dy = e.clientY - dragging.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) dragging.moved = true;
+    if (dragging.pan) {
+      camera.panX += dx * 0.05;
+      camera.panY -= dy * 0.05;
+    } else {
+      camera.yaw += dx * 0.008;
+      camera.pitch = Math.max(-0.2, Math.min(1.3, camera.pitch + dy * 0.006));
+    }
+    dragging.x = e.clientX;
+    dragging.y = e.clientY;
+    if (REDUCE_MOTION) drawScene(0);
+  });
+  window.addEventListener("mouseup", function (e) {
+    if (dragging && !dragging.moved) pick(e);
+    dragging = null;
+  });
+  canvas.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    camera.dist = Math.max(14, Math.min(140, camera.dist + e.deltaY * 0.05));
+    if (REDUCE_MOTION) drawScene(0);
+  }, { passive: false });
+
+  function pick(e) {
+    var rect = canvas.getBoundingClientRect();
+    var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    var best = null, bestDist = 18;
+    payload.clusters.forEach(function (c) {
+      var p = c._screen;
+      if (!p) return;
+      var d = Math.hypot(p.x - mx, p.y - my);
+      if (d < bestDist) { bestDist = d; best = c; }
+    });
+    if (best) select(best.clusterId);
+  }
+
+  // ---- boot ----
+  function loop(t) {
+    drawScene(t);
+    requestAnimationFrame(loop);
+  }
+
   setConn("", "connecting…");
   connect();
+  window.addEventListener("resize", resize);
+  resize();
+  if (!REDUCE_MOTION) requestAnimationFrame(loop);
 })();
 </script>
 </body>
