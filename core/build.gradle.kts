@@ -15,6 +15,15 @@ kotlin {
     jvmToolchain(21)
 }
 
+/** The whole stack over SimNetwork, printed. `--json <path>` also writes the twin snapshot. */
+tasks.register<JavaExec>("runSim") {
+    group = "verification"
+    description = "Run the mesh simulation and print the report"
+    mainClass.set("org.groundzero.mesh.simulation.SimulationRunner")
+    classpath = sourceSets["main"].runtimeClasspath
+    args = (project.findProperty("simArgs") as String?)?.split(" ") ?: emptyList()
+}
+
 tasks.test {
     useJUnitPlatform()
     testLogging {

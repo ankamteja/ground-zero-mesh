@@ -24,6 +24,16 @@ data class IncidentCluster(
     val firstSeenMs: Long,
     val lastUpdatedMs: Long,
     val slmSummary: String? = null,
+    /**
+     * Every sensory flag ever asserted for this incident, OR-ed together.
+     *
+     * Union rather than last-write for the same reason severity never walks back: a device
+     * that reported water and is now too damaged to report it was still in water. Evidence
+     * accumulates; it does not expire because the next frame was quieter.
+     */
+    val flags: Byte = 0,
+    /** The most recent `v_SLM` seen for this incident, if any report carried one. */
+    val featureVector: org.groundzero.mesh.agent.SlmFeatureVector? = null,
     /** True once a report for this incident arrived first-hand rather than as testimony. */
     val firstHandHeld: Boolean = false,
 ) {
@@ -80,6 +90,8 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
                 firstSeenMs = nowMs,
                 lastUpdatedMs = nowMs,
                 slmSummary = envelope.slmSummary,
+                flags = envelope.flags,
+                featureVector = envelope.featureVector,
                 firstHandHeld = isFirstHand,
             )
         } else {
@@ -98,6 +110,8 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
                 lastUpdatedMs = nowMs,
                 // A later enrichment fills the summary in; it never blanks an existing one.
                 slmSummary = envelope.slmSummary ?: existing.slmSummary,
+                flags = (existing.flags.toInt() or envelope.flags.toInt()).toByte(),
+                featureVector = envelope.featureVector ?: existing.featureVector,
                 firstHandHeld = existing.firstHandHeld || isFirstHand,
             )
         }
