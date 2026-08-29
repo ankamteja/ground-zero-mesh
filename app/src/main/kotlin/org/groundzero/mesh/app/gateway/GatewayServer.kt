@@ -1,6 +1,8 @@
 package org.groundzero.mesh.app.gateway
 
 import fi.iki.elonen.NanoHTTPD
+import org.groundzero.mesh.gateway.RankedIncident
+import org.groundzero.mesh.propagation.Severity
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
 import java.util.concurrent.CopyOnWriteArrayList
@@ -12,18 +14,23 @@ import java.util.concurrent.CopyOnWriteArrayList
  *
  * Routes:
  * - `GET /` , `/index.html` — the static dashboard (from `assets/dashboard/`)
- * - `GET /snapshot`         — the current ranked clusters, once, as JSON
+ * - `GET /snapshot`         — the current ranked incidents, once, as JSON
  * - `GET /events`           — Server-Sent Events; a `data:` line every [pushIntervalMs]
  *
  * The dashboard falls back to polling `/snapshot` if `/events` is unavailable, so the SSE
  * path is best-effort.
+ *
+ * The board is served straight from `core`'s [RankedIncident] — [clustersNow] is expected
+ * to be `ResponderRanking.rank(gossip.clusters(), now)`. There is no app-side ranking any
+ * more. The advisory line is a deterministic one-liner built here; it annotates, it never
+ * reorders (see [advise]).
  */
 class GatewayServer(
     port: Int = DEFAULT_PORT,
-    private val advisor: AiAdvisor = NoopAiAdvisor,
     private val pushIntervalMs: Long = 2_000,
+    private val now: () -> Long = System::currentTimeMillis,
     private val readAsset: (String) -> ByteArray?,
-    private val clustersNow: () -> List<SurvivorCluster>,
+    private val clustersNow: () -> List<RankedIncident>,
 ) : NanoHTTPD(port) {
 
     private val subscribers = CopyOnWriteArrayList<PipedOutputStream>()
@@ -52,9 +59,31 @@ class GatewayServer(
     }
 
     private fun payload(): String {
-        val clusters = clustersNow()
-        val advice = advisor.summarise(clusters)
-        return "{\"advice\":${quote(advice)},\"clusters\":${ClusterJson.array(clusters)}}"
+        val nowMs = now()
+        val ranked = clustersNow()
+        return "{\"advice\":${quote(advise(ranked))},\"clusters\":${ClusterJson.array(ranked, nowMs)}}"
+    }
+
+    /**
+     * A short, plain-language line for the responder. Deterministic, offline, no model.
+     * It summarises what the ranking already decided — it can never delay, reorder, or veto
+     * an entry. This is the "AI is advisory only" rule holding at L3.
+     */
+    private fun advise(ranked: List<RankedIncident>): String {
+        if (ranked.isEmpty()) return "No incidents yet."
+        val inBudget = ranked.count { it.withinBudget }
+        val dispatchable = ranked.count { it.withinBudget && it.standing.dispatchable }
+        val drowning = ranked.count { it.cluster.severity == Severity.DROWNING_IMMINENT }
+        val top = ranked.first().cluster
+        return buildString {
+            append(inBudget).append(" incident(s) within the action budget")
+            if (dispatchable != inBudget) {
+                append(", ").append(dispatchable).append(" first-hand and dispatchable")
+            }
+            if (drowning > 0) append("; ").append(drowning).append(" at imminent-drowning severity")
+            append(". Highest: ").append(top.zone)
+            append(" (").append(top.severity.name.lowercase().replace('_', ' ')).append(").")
+        }
     }
 
     private fun pushLoop() {

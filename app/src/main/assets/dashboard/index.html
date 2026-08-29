@@ -87,6 +87,10 @@
   .metrics .k { color: var(--muted); }
   .metrics .v { font-variant-numeric: tabular-nums; }
   .tier { border-bottom: 1px dotted var(--muted); cursor: help; }
+  .detail { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+  .standing { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .reasons { margin: 0; padding-left: 16px; color: var(--muted); font-size: 12px; }
+  .reasons li { margin: 1px 0; }
   .outnote { margin-top: 8px; font-size: 11px; color: var(--muted); }
   footer { padding: 14px 18px; color: var(--muted); font-size: 12px; text-align: center; }
   @media (max-width: 480px) { .metrics { grid-template-columns: 1fr; } }
@@ -280,12 +284,24 @@
           kv("last seen", ago(c.lastSeenSecondsAgo)) +
           kv("reports folded", String(c.reportCount)) +
         '</div>' +
+        detail(c) +
         (inBudget ? "" : '<div class="outnote">outside the action budget — listed, not prioritised</div>');
       grid.appendChild(card);
     });
   }
 
   function kv(k, v) { return '<div><span class="k">' + k + '</span><span class="v">' + v + '</span></div>'; }
+  function detail(c) {
+    var standing = c.standing ? '<div class="standing">' + esc(c.standing) + '</div>' : "";
+    var reasons = "";
+    if (Array.isArray(c.reasons) && c.reasons.length) {
+      reasons = '<ul class="reasons">' + c.reasons.map(function (r) {
+        return '<li>' + esc(r) + '</li>';
+      }).join("") + '</ul>';
+    }
+    if (!standing && !reasons) return "";
+    return '<div class="detail">' + standing + reasons + '</div>';
+  }
   function pct(d) { return Math.round((d || 0) * 100) + "%"; }
   function ago(s) {
     s = s || 0;
