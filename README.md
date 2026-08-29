@@ -17,14 +17,31 @@ picture — where the surviving clusters are, who is closest to dying — emerge
 | **L2 Propagation** | gossip, trust consensus, epistemology tiers, dedup |
 | **L3 Responder Gateway** | perimeter dashboard, ranked survivor view |
 
+## The cascade
+
+- **Stage 0, t=0ms** — manual SOS. Synchronous broadcast at full danger, before anything is
+  inferred.
+- **Stage 1** — sensors (accelerometer, ambient light) fill a 16-float feature vector,
+  `v_SLM`.
+- **Stage 2, <1ms** — the deterministic Math Engine projects `v_SLM` into one signal
+  (`Signal = W · v_SLM + w_IMU · a_mag`), an EMA smooths it (α = 0.35), and an 8-bit flag
+  byte is compiled.
+- **Stage 3, ~500ms–30s** — the enriched report re-broadcasts on the *same* incident
+  timestamp, so it updates the existing incident rather than raising a second alert.
+
+On-device inference never produces text — only the 16-float vector. The score comes from a
+linear projection whose contributing feature can always be named.
+
 ## Locked decisions
 
-- **Kotlin + Jetpack Compose, one Android app**, three runtime-selectable roles: Node / Relay / Gateway.
+- **Kotlin + Jetpack Compose, one Android app**, three runtime-selectable roles: Node / Relay / Gateway. The switch gates origination and sensing, not relaying — every role keeps carrying other people's reports.
 - **Android only.** Nearby Connections (Android) and Multipeer Connectivity (iOS) do not interoperate — scoped out on purpose.
 - **Google Nearby Connections, `P2P_CLUSTER`.** BLE discovery that auto-upgrades the data channel to Wi-Fi Direct / local WLAN.
-- **AI is advisory only.** It never gates, delays, or reorders the deterministic relay and consensus path.
+- **AI is advisory only, structurally.** The L1 classifier and the L3 `RadminLlmSummarizer` both sit behind seams that take a decision already made and can only describe it — neither has a return path to gate, delay or reorder anything.
+- **Trust decays far faster than it builds.** +0.05 gain, −0.35 loss — a corroborated relay earns influence slowly; one report that contradicts first-hand observation costs it about seven relays' worth of standing.
+- **Localisation is not solved, and nothing pretends otherwise.** The Digital Twin places incidents from the zone tag alone; an incident whose zone names no floor renders as explicitly unplaced rather than being drawn on the ground floor.
 - **LoRa is in scope.** Hence the hard byte budget on the wire.
-- **Wire format:** JSON on phone-to-phone hops, compact binary on LoRa hops — one `Envelope`, two projections, chosen from the transport's frame budget.
+- **Wire format:** JSON on phone-to-phone hops, compact binary on LoRa hops — one `Envelope`, two projections, chosen from the transport's frame budget. Every envelope carries the 8-bit sensory flag byte; the full feature vector is optional and rides only on the Stage 3 enriched broadcast.
 - **No raw audio / images / video on the mesh, ever.** Rich sensory data is turned into text before it crosses the wire.
 
 ## Modules
@@ -32,16 +49,38 @@ picture — where the surviving clusters are, who is closest to dying — emerge
 ```
 core/   pure JVM — no Android, no third-party runtime dependency.
         Tests run on any JDK 21 with no SDK.
-app/    the Android app (enabled from phase2/nearby-transport onward).
+        agent/       NodeAgent (4-stage cascade), MathEngine, DangerScore, SensoryClassifier
+        propagation/ Envelope, Gossip, TrustConsensus, DedupCluster/IncidentCluster, codecs
+        gateway/     ResponderRanking, DigitalTwin, RadminLlmSummarizer
+        simulation/  SimulationRunner — the whole stack over a simulated mesh, no device needed
+app/    the Android app.
+        transport/   NearbyTransport, LoRaBridgeTransport, GossipOriginTransport, StoreAndForward
+        sensors/     SensorBridge, SensorNormalisation — accelerometer + light into the agent
+        mesh/        MeshStack — the process-wide handle the service publishes
+        gateway/     GatewayServer (NanoHTTPD) + the on-phone responder dashboard
+docs/   docs/architecture.md — the ported-formula ledger.
+        docs/simulation_dashboard.html — the 3D digital-twin viewer for SimulationRunner's output.
 ```
 
 ## Build
 
 ```bash
-./gradlew :core:test        # must stay green on every branch
+./gradlew :core:test                                    # must stay green on every branch
+./gradlew :app:testDebugUnitTest                         # app unit tests, no device needed
+./gradlew :core:runSim                                   # the whole stack, printed
+./gradlew :core:runSim -PsimArgs="--json docs/simulation-twin.json"   # + a dashboard snapshot
 ```
 
 Requires JDK 21. The `app/` module additionally needs the Android SDK.
+
+## What's real vs. simulated right now
+
+Every layer above is implemented and unit-tested (`core` alone is 150+ tests). What has
+**not** been run is the actual three-phone field test: no Android hardware is attached to
+the development machine, and Nearby Connections cannot run between emulators (no real BT /
+Wi-Fi Direct radios). `MeshFieldSimulationTest` stands in for it over a simulated network and
+proves the mesh logic; it proves nothing about Nearby's discovery or permission behaviour,
+which is where a live demo is most likely to fail silently. See `TODO.md` for the exact gap.
 
 ## Contributing
 
