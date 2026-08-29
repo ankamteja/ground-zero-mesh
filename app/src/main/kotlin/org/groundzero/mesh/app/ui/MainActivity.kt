@@ -37,7 +37,15 @@ class MainActivity : ComponentActivity() {
                     var granted by remember { mutableStateOf(MeshPermissions.allGranted(this)) }
                     val requester = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestMultiplePermissions()
-                    ) { result -> granted = result.values.all { it } }
+                    ) { result ->
+                        granted = result.values.all { it }
+                        // onStart already missed its chance to do this: it only checks
+                        // permissions once, on the way in, before this dialog has even
+                        // shown. Without this, the service never starts until the app is
+                        // backgrounded and reopened — a silent gap between "permissions
+                        // granted" and "mesh actually running".
+                        if (granted) MeshForegroundService.start(this)
+                    }
 
                     if (!granted) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
