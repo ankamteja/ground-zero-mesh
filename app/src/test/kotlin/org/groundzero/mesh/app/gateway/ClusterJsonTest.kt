@@ -90,6 +90,7 @@ class ClusterJsonTest {
             "\"dangerScore\":0.8",
             "\"lastSeenSecondsAgo\":45",
             "\"reportCount\":3",            // corroborators.size
+            "\"minHops\":2",
             "\"recommendedActionRank\":1",
             "\"standing\":\"confirmed — first-hand\"",
             "\"dispatchable\":true",

@@ -50,6 +50,10 @@ object ClusterJson {
         num("dangerScore", trim(c.dangerScore)); append(',')
         num("lastSeenSecondsAgo", (c.ageMs(nowMs) / 1000).coerceAtLeast(0).toString()); append(',')
         num("reportCount", c.reportCount.toString()); append(',')
+        // The nearest this incident has ever reached us over the radio — the honest proxy
+        // for "how far away" that a mesh with no GPS/RSSI ranging actually has. See the
+        // localisation entry in TODO.md's open assumptions.
+        num("minHops", c.minHops.toString()); append(',')
         // index+1 while inside the dispatch budget; null past it — still listed, not prioritised.
         num("recommendedActionRank", if (r.withinBudget) (index + 1).toString() else "null"); append(',')
         num("priority", trim(r.priority)); append(',')

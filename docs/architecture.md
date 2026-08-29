@@ -345,6 +345,18 @@ fold, including a repeat from a relay that already reported this incident — th
 number: `corroborationCount` (`corroborators.size - 1`), distinct relayers beyond the
 first. `ClusterJson.reportCount` reads the new field.
 
+### Distance estimate: hop count, not a coordinate (2026-08-30)
+
+Field-testing surfaced a request for "how far away" on the board — but the open assumptions
+above already rule out fabricating one: no GPS, no RSSI ranging exists anywhere in this
+project. `IncidentCluster.minHops` (fewest relay links a report has ever reached this node
+by) already existed and was already the intended proxy — the open assumptions list names it
+alongside the zone tag. It was only ever surfaced as one clause inside the `reasons` text.
+`ClusterJson` now emits it as its own `minHops` field; the dashboard shows it as a labelled
+"distance (hops)" row in the Inspector and a compact `N hop(s) away` tag on each board row,
+both with a caption naming it a hop count, not a distance, so a responder never reads more
+precision into it than the mesh actually has.
+
 ### The sensory-flag pipeline reached everywhere except the real dashboard (closed 2026-08-30)
 
 The Math Engine / flag byte (Phase 8) was wired end-to-end from `SensorBridge` through to

@@ -363,7 +363,7 @@
         '<span class="meta">' +
           '<span>' + esc(c.zone) + (c.placed ? " · " + esc(c.floorLabel) : '') +
             (c.placed ? "" : ' <span class="unplaced-tag">unplaced</span>') + '</span>' +
-          '<span>' + c.flags + '</span>' +
+          '<span>' + hopsLabel(c.minHops) + ' &middot; ' + c.flags + '</span>' +
         '</span>' +
       '</button>';
     }).join("");
@@ -404,6 +404,7 @@
       '<div class="row"><span title="' + esc(TIER[c.effectiveTier] || "") + '">evidence tier</span><span>' + tierLabel(c.effectiveTier) + '</span></div>' +
       '<div class="row"><span>danger score</span><span>' + pct(c.dangerScore) + '</span></div>' +
       '<div class="row"><span>corroboration</span><span>×' + c.corroboration + '</span></div>' +
+      '<div class="row"><span title="No GPS or RSSI ranging — this is how many relay hops the closest report ever took, the one distance signal this mesh actually has.">distance (hops)</span><span>' + hopsLabel(c.minHops) + '</span></div>' +
       '<div class="row"><span>last seen</span><span>' + ago(c.lastSeenSecondsAgo) + '</span></div>' +
       '<div class="row"><span>position</span><span>' + (c.placed ? esc(c.floorLabel) + " (schematic)" : "unplaced") + '</span></div>' +
 
@@ -460,6 +461,10 @@
   }
   function tierLabel(t) {
     return t === "PRATYAKSA" ? "first-hand" : t === "ANUMANA" ? "inferred" : "relayed";
+  }
+  /** No GPS/RSSI ranging exists — hop count is the one honest distance proxy this mesh has. */
+  function hopsLabel(n) {
+    return n === 0 ? "in range" : n + " hop" + (n === 1 ? "" : "s") + " away";
   }
   function esc(s) {
     return String(s).replace(/[&<>"]/g, function (c) {
