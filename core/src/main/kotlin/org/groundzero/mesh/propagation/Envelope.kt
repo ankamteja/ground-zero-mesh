@@ -76,6 +76,23 @@ data class Envelope(
     val effectiveTier: EpistemologyTier
         get() = if (hops > 0) tier.relayed() else tier
 
+    /**
+     * What this node holds after taking the envelope off a link.
+     *
+     * Guarantees `hops >= 1`, and therefore that [effectiveTier] is testimony. Call it
+     * once, on ingest, before the envelope reaches any layer that reasons about tiers.
+     *
+     * The guarantee cannot come from [hops] on its own, because [hops] is a
+     * sender-controlled field. A node that is faulty, spoofed, or simply never increments
+     * it arrives looking like direct observation — and the first-hand gate is precisely
+     * the tier a bad actor wants to get past, since it is the one that authorises the
+     * irreversible action. So the receiver decides its own epistemic position instead of
+     * trusting a number the sender chose.
+     *
+     * Idempotent: an envelope that already crossed hops is returned unchanged.
+     */
+    fun asReceived(): Envelope = if (hops > 0) this else copy(hops = 1)
+
     /** One hop further out: hop count up, ttl down. Fails if ttl is exhausted. */
     fun forwarded(addPeers: List<NodeId> = emptyList()): Envelope {
         check(ttl > 0) { "ttl exhausted, cannot forward $dedupKey" }
