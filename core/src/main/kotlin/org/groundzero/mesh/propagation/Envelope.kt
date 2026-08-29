@@ -32,6 +32,20 @@ data class Envelope(
     val timestamp: Long,
     /** <= 50 bytes UTF-8, Stage 3 only. */
     val slmSummary: String? = null,
+    /**
+     * The 8-bit sensory summary. See [org.groundzero.mesh.agent.SensoryFlags] for the bit
+     * layout; one byte, so it rides on every envelope including LoRa frames.
+     */
+    val flags: Byte = 0,
+    /**
+     * The full 16-float feature vector, quantised to a byte per slot on the wire.
+     *
+     * Optional because it costs 17 bytes of a 233-byte LoRa frame to carry evidence a
+     * responder does not triage on — [flags] is what the board acts on. Stage 3 attaches it
+     * so the dashboard's inspector can show what the device actually saw; a heartbeat does
+     * not.
+     */
+    val featureVector: org.groundzero.mesh.agent.SlmFeatureVector? = null,
     /** <= 4 entries. */
     val views: List<String> = emptyList(),
     /** <= 8 entries. */

@@ -242,4 +242,78 @@ class NodeAgentTest {
         node.raiseSos(Severity.DROWNING_IMMINENT)
         assertTrue(node.explain().reason.contains("override", ignoreCase = true))
     }
+
+    // ------------------------------------------------------------------ the math engine
+
+    @Test
+    fun `stage 0 stamps the manual SOS flag and carries no vector`() {
+        val (node, _) = agent()
+        val envelope = node.raiseSos(Severity.DROWNING_IMMINENT)
+
+        assertTrue(SensoryFlags.isSet(envelope.flags, SensoryFlags.MANUAL_SOS))
+        assertNull(envelope.featureVector)
+    }
+
+    @Test
+    fun `a projected vector moves the score without transmitting`() {
+        val (node, _) = agent()
+        // Water and a pinned device project to 0.625 — enough to watch, deliberately not
+        // enough to alarm on its own. No single pair of channels can alarm the node.
+        val drowning = SlmFeatureVector.of(
+            SlmFeatureVector.AUDIO_WATER to 1.0,
+            SlmFeatureVector.IMU_PINNED to 1.0,
+        )
+        repeat(10) { node.senseVector(drowning, accelMagnitude = 0.9) }
+
+        assertEquals(AgentState.WATCH, node.state)
+        assertTrue(node.emitted.isEmpty())
+    }
+
+    @Test
+    fun `evidence across audio, IMU and light does alarm the node`() {
+        val (node, _) = agent()
+        val collapse = SlmFeatureVector.of(
+            SlmFeatureVector.AUDIO_WATER to 1.0,
+            SlmFeatureVector.AUDIO_STRUCTURAL to 1.0,
+            SlmFeatureVector.IMU_PINNED to 1.0,
+            SlmFeatureVector.IMU_SHOCK to 1.0,
+            SlmFeatureVector.LIGHT_ENCLOSED to 1.0,
+        )
+        repeat(10) { node.senseVector(collapse, accelMagnitude = 0.9) }
+
+        assertEquals(AgentState.ALARM, node.state)
+    }
+
+    @Test
+    fun `stage 3 carries the vector and the enriched flag`() {
+        val clock = Clock()
+        val (node, _) = agent(clock)
+        node.raiseSos(Severity.STRUCTURAL_ENTRAPMENT)
+        clock.advance(5_000)
+
+        val enriched = node.completeSensoryWindow(
+            SensoryWindow(imuPinned = 0.9, ambientLight = 0.05, audioStructural = 0.6),
+        )
+        assertNotNull(enriched)
+        assertTrue(SensoryFlags.isSet(enriched.flags, SensoryFlags.STAGE_2_ENRICHED))
+        assertTrue(SensoryFlags.isSet(enriched.flags, SensoryFlags.IMU_PINNED))
+        assertTrue(SensoryFlags.isSet(enriched.flags, SensoryFlags.LOW_LIGHT))
+        assertEquals(0.9f, enriched.featureVector!![SlmFeatureVector.IMU_PINNED], 1e-6f)
+        // Same incident, updated in place — not a second alert for the same person.
+        assertEquals(node.emitted.first().dedupKey, enriched.dedupKey)
+    }
+
+    @Test
+    fun `the enriched envelope still fits a LoRa frame with the vector aboard`() {
+        val clock = Clock()
+        val (node, _) = agent(clock)
+        node.raiseSos(Severity.DROWNING_IMMINENT)
+        clock.advance(1_000)
+
+        val enriched = node.completeSensoryWindow(
+            SensoryWindow(audioWater = 0.95, imuPinned = 0.8, ambientLight = 0.1),
+        )
+        assertNotNull(enriched)
+        assertTrue(org.groundzero.mesh.propagation.CompactCodec.fits(enriched))
+    }
 }

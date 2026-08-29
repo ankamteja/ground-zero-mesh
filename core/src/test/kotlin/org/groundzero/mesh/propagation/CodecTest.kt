@@ -1,5 +1,6 @@
 package org.groundzero.mesh.propagation
 
+import org.groundzero.mesh.agent.SlmFeatureVector
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
@@ -49,6 +50,45 @@ class CodecTest {
         assertEquals(full.hops, decoded.hops)
         assertEquals(full.ttl, decoded.ttl)
         assertTrue(kotlin.math.abs(full.dangerScore - decoded.dangerScore) < 1e-3)
+    }
+
+    @Test
+    fun jsonRoundTripsFlagsAndFeatureVector() {
+        val e = full.copy(
+            flags = 0x8F.toByte(),
+            featureVector = SlmFeatureVector.of(
+                SlmFeatureVector.AUDIO_WATER to 0.75,
+                SlmFeatureVector.IMU_PINNED to 0.5,
+            ),
+        )
+        assertEquals(e, JsonCodec.decode(JsonCodec.encode(e)))
+    }
+
+    @Test
+    fun compactRoundTripsFlagsAndQuantisedFeatureVector() {
+        val vector = SlmFeatureVector.of(
+            SlmFeatureVector.AUDIO_WATER to 0.75,
+            SlmFeatureVector.IMU_SHOCK to 0.2,
+        )
+        val e = full.copy(flags = 0x2D.toByte(), featureVector = vector)
+        val decoded = CompactCodec.decode(CompactCodec.encode(e))
+
+        assertEquals(e.flags, decoded.flags)
+        val slots = decoded.featureVector!!.toList()
+        // One byte per slot, so a slot survives to within half a step of 1/255.
+        vector.toList().forEachIndexed { i, expected ->
+            assertTrue(kotlin.math.abs(expected - slots[i]) <= 1f / 255f)
+        }
+    }
+
+    @Test
+    fun compactCarriesTheVectorForSeventeenBytes() {
+        val withVector = full.copy(featureVector = SlmFeatureVector.ZERO)
+        assertEquals(
+            CompactCodec.frameSize(full) + SlmFeatureVector.LENGTH,
+            CompactCodec.frameSize(withVector),
+        )
+        assertTrue(CompactCodec.fits(withVector))
     }
 
     @Test

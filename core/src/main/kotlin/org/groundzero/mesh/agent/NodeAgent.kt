@@ -31,6 +31,20 @@ import org.groundzero.mesh.transport.Transport
  * so downstream layers update that incident rather than raising a second alert. If the
  * classifier throws, blocks, or is never called at all, the first broadcast has already
  * gone and the deterministic loop continues untouched.
+ *
+ * ### The cascade, by stage
+ *
+ * - **Stage 0, t = 0 ms** — [raiseSos]. Synchronous broadcast at score 1.00,
+ *   [EpistemologyTier.PRATYAKSA], flags carrying [SensoryFlags.MANUAL_SOS]. Nothing is
+ *   inferred, nothing is waited on.
+ * - **Stage 1, t = 10–500 ms** — the sensory window fills. On device that is
+ *   [senseVector] called on the sensing ticker; each call carries the 16-float `v_SLM` and
+ *   one normalised accelerometer magnitude.
+ * - **Stage 2, t < 1 ms** — [MathEngine.project] turns that into one `Signal_t`, the EMA in
+ *   [DangerScore] smooths it, and [SensoryFlags.encode] compiles the flag byte.
+ * - **Stage 3, t ≈ 500 ms–30 s** — [completeSensoryWindow] re-broadcasts the enriched
+ *   envelope, reusing the incident timestamp so the same incident is updated, and attaching
+ *   the feature vector for the responder board's inspector.
  */
 class NodeAgent(
     val nodeId: NodeId,
@@ -39,6 +53,7 @@ class NodeAgent(
     private val transport: Transport,
     private val clockMs: () -> Long,
     private val classifier: SensoryClassifier = DeterministicSensoryClassifier(),
+    private val mathEngine: MathEngine = MathEngine(),
     private val dangerScore: DangerScore = DangerScore(),
     private val gate: HysteresisGate = HysteresisGate(),
     private val detector: EventDetector = EventDetector(),
@@ -58,6 +73,10 @@ class NodeAgent(
         private set
 
     var lastEvent: SensoryEvent? = null
+        private set
+
+    /** The most recent `v_SLM`, or null while only scalar observations have arrived. */
+    var lastVector: SlmFeatureVector? = null
         private set
 
     /** Every envelope this agent put on the wire, newest last. Useful for the debug view. */
@@ -84,6 +103,31 @@ class NodeAgent(
         detector.observe(observation)?.let { lastEvent = it }
         return gate.update(dangerScore.score)
     }
+
+    /**
+     * Stages 1 and 2 in one call: project the feature vector through the [MathEngine], fold
+     * the resulting `Signal_t` into the EMA, and remember the vector so Stage 3 can attach it
+     * and the flag byte can be compiled from it.
+     *
+     * Does not transmit, for the same reason [senseTick] does not.
+     */
+    fun senseVector(vector: SlmFeatureVector, accelMagnitude: Double = 0.0): AgentState {
+        lastVector = vector
+        return senseTick(mathEngine.project(vector, accelMagnitude))
+    }
+
+    /**
+     * The 8-bit sensory summary as it stands right now.
+     *
+     * [SensoryFlags.MANUAL_SOS] is set from the agent's own incident state rather than from
+     * any sensor: it records that a human pressed the button, which no feature vector can
+     * assert on its own and no classifier may clear.
+     */
+    fun currentFlags(): Byte = SensoryFlags.encode(
+        vector = lastVector ?: SlmFeatureVector.ZERO,
+        manualSos = activeIncident != null,
+        enriched = activeIncident?.enriched == true,
+    )
 
     // ------------------------------------------------------------- ticker 2: heartbeat
 
@@ -195,6 +239,10 @@ class NodeAgent(
         if (incident.enriched) return null
         if (clockMs() - incident.openedAtMs > SENSORY_WINDOW_MS) return null
 
+        // The window is the evidence, so it defines v_SLM for the enriched broadcast whether
+        // or not a sensing ticker ever ran.
+        lastVector = SlmFeatureVector.from(window.copy(event = window.event ?: lastEvent))
+
         val summary = try {
             classifier.classify(window.copy(event = window.event ?: lastEvent))
         } catch (e: Exception) {
@@ -218,6 +266,9 @@ class NodeAgent(
                 score = refined,
                 timestampSeconds = incident.atSeconds,
                 slmSummary = wire,
+                // Stage 3 is the one broadcast that carries the vector: it is the enriched
+                // report a responder will open, and 17 bytes buys the inspector its evidence.
+                featureVector = lastVector,
                 views = listOf("OVERRIDE_ACTIVE", "ENRICHED"),
             ),
         )
@@ -247,6 +298,7 @@ class NodeAgent(
         score: Double,
         timestampSeconds: Long,
         slmSummary: String? = null,
+        featureVector: SlmFeatureVector? = null,
         views: List<String> = emptyList(),
     ) = Envelope(
         nodeId = nodeId,
@@ -257,6 +309,8 @@ class NodeAgent(
         dangerScore = score.coerceIn(0.0, 1.0),
         timestamp = timestampSeconds,
         slmSummary = slmSummary,
+        flags = currentFlags(),
+        featureVector = featureVector,
         views = views.take(Envelope.MAX_VIEWS),
         peers = transport.knownPeers().take(Envelope.MAX_PEERS),
         hops = 0,

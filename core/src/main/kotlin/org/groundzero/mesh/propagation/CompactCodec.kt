@@ -1,5 +1,6 @@
 package org.groundzero.mesh.propagation
 
+import org.groundzero.mesh.agent.SlmFeatureVector
 import org.groundzero.mesh.propagation.Envelope.Companion.utf8Size
 import java.io.ByteArrayOutputStream
 
@@ -18,10 +19,13 @@ import java.io.ByteArrayOutputStream
  *  27   8     timestamp, i64 seconds
  *  35   1     hops
  *  36   1     ttl
- *  37   1     addressZone length n
- *  38   n     addressZone, UTF-8
+ *  37   1     sensory flags (see SensoryFlags)
+ *  38   1     addressZone length n
+ *  39   n     addressZone, UTF-8
  *  ..   1     slm header: 0xFF = null, else length m (0..50)
  *  ..   m     slmSummary, UTF-8 (absent when header is 0xFF)
+ *  ..   1     v_SLM header: 0x00 = absent, 0x01 = present
+ *  ..   16    v_SLM, one u8 per slot = round(value * 255) (absent when header is 0x00)
  *  ..   1     view count v
  *       per view: 1 length byte + bytes
  *  ..   1     peer count p
@@ -32,12 +36,16 @@ object CompactCodec : EnvelopeCodec {
 
     override val name: String = "compact"
 
-    private const val VERSION: Int = 0x01
+    /** 0x02 added the flag byte and the optional v_SLM block. Nothing speaks 0x01. */
+    private const val VERSION: Int = 0x02
     private const val SLM_NULL: Int = 0xFF
+    private const val VECTOR_ABSENT: Int = 0x00
+    private const val VECTOR_PRESENT: Int = 0x01
     private const val SCORE_SCALE: Double = 10_000.0
+    private const val SLOT_SCALE: Double = 255.0
 
     /** Fixed part of the layout, before the variable-length tail. */
-    private const val FIXED_PREFIX = 38
+    private const val FIXED_PREFIX = 39
 
     /**
      * Maximum application payload on a Meshtastic LoRa frame.
@@ -57,6 +65,8 @@ object CompactCodec : EnvelopeCodec {
         n += envelope.addressZone.utf8Size()
         n += 1 // slm header
         if (envelope.slmSummary != null) n += envelope.slmSummary.utf8Size()
+        n += 1 // v_SLM header
+        if (envelope.featureVector != null) n += SlmFeatureVector.LENGTH
         n += 1 // view count
         for (v in envelope.views) n += 1 + v.utf8Size()
         n += 1 // peer count
@@ -77,6 +87,7 @@ object CompactCodec : EnvelopeCodec {
         out.writeI64(envelope.timestamp)
         out.write(envelope.hops)
         out.write(envelope.ttl)
+        out.write(envelope.flags.toInt() and 0xFF)
 
         val zone = envelope.addressZone.toByteArray(Charsets.UTF_8)
         out.write(zone.size)
@@ -88,6 +99,14 @@ object CompactCodec : EnvelopeCodec {
             val slm = envelope.slmSummary.toByteArray(Charsets.UTF_8)
             out.write(slm.size)
             out.write(slm)
+        }
+
+        val vector = envelope.featureVector
+        if (vector == null) {
+            out.write(VECTOR_ABSENT)
+        } else {
+            out.write(VECTOR_PRESENT)
+            for (slot in vector.values) out.write(Math.round(slot * SLOT_SCALE).toInt())
         }
 
         out.write(envelope.views.size)
@@ -116,9 +135,15 @@ object CompactCodec : EnvelopeCodec {
             val timestamp = r.i64()
             val hops = r.u8()
             val ttl = r.u8()
+            val flags = r.u8().toByte()
             val zone = String(r.bytes(r.u8()), Charsets.UTF_8)
             val slmHeader = r.u8()
             val slm = if (slmHeader == SLM_NULL) null else String(r.bytes(slmHeader), Charsets.UTF_8)
+            val vector = if (r.u8() == VECTOR_PRESENT) {
+                SlmFeatureVector(FloatArray(SlmFeatureVector.LENGTH) { (r.u8() / SLOT_SCALE).toFloat() })
+            } else {
+                null
+            }
             val viewCount = r.u8()
             val views = ArrayList<String>(viewCount)
             repeat(viewCount) { views.add(String(r.bytes(r.u8()), Charsets.UTF_8)) }
@@ -134,6 +159,8 @@ object CompactCodec : EnvelopeCodec {
                 dangerScore = danger.coerceIn(0.0, 1.0),
                 timestamp = timestamp,
                 slmSummary = slm,
+                flags = flags,
+                featureVector = vector,
                 views = views,
                 peers = peers,
                 hops = hops,

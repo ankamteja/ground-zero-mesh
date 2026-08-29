@@ -1,5 +1,7 @@
 package org.groundzero.mesh.propagation
 
+import org.groundzero.mesh.agent.SlmFeatureVector
+
 /**
  * The phone-to-phone projection: plain JSON, readable in a log, forgiving to evolve.
  *
@@ -23,6 +25,13 @@ object JsonCodec : EnvelopeCodec {
         if (envelope.slmSummary == null) rawField("slmSummary", "null")
         else field("slmSummary", envelope.slmSummary)
         append(',')
+        rawField("flags", (envelope.flags.toInt() and 0xFF).toString()); append(',')
+        rawField(
+            "featureVector",
+            envelope.featureVector?.toList()?.joinToString(",", "[", "]") { it.toString() }
+                ?: "null",
+        )
+        append(',')
         rawField("views", envelope.views.joinToString(",", "[", "]") { quote(it) }); append(',')
         rawField("peers", envelope.peers.joinToString(",", "[", "]") { quote(it.canonical()) }); append(',')
         rawField("hops", envelope.hops.toString()); append(',')
@@ -42,6 +51,9 @@ object JsonCodec : EnvelopeCodec {
                 dangerScore = obj.num("dangerScore"),
                 timestamp = obj.num("timestamp").toLong(),
                 slmSummary = obj.strOrNull("slmSummary"),
+                flags = obj.num("flags").toInt().toByte(),
+                featureVector = obj.floatArrayOrNull("featureVector")
+                    ?.let { SlmFeatureVector(it) },
                 views = obj.strArray("views"),
                 peers = obj.strArray("peers").map { NodeId.parse(it) },
                 hops = obj.num("hops").toInt(),
@@ -88,6 +100,17 @@ private class JsonObj(val map: Map<String, Any?>) {
     @Suppress("UNCHECKED_CAST")
     fun strArray(key: String): List<String> =
         (map[key] as? List<Any?> ?: error("expected array field '$key'")).map { it as String }
+
+    fun floatArrayOrNull(key: String): FloatArray? {
+        val list = map[key] as? List<*> ?: return null
+        return FloatArray(list.size) { i ->
+            when (val v = list[i]) {
+                is Double -> v.toFloat()
+                is Long -> v.toFloat()
+                else -> error("expected number in '$key'")
+            }
+        }
+    }
 }
 
 private class JsonParser(private val s: String) {

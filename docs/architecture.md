@@ -377,3 +377,53 @@ heartbeat emits nothing, so the ticker is nearly free when there is nothing to s
 `NodeAgent.livenessTick` is not driven. It expects a `MutableMap<NodeId, Peer>` and the app
 keeps peers in `PeerTable`, whose own `decayTick` runs in the maintenance tick — peers still
 decay and go SILENT on time. The agent's copy of that concern is unused on device.
+
+---
+
+## The Math Engine and the flag byte (Phase 8)
+
+Ported from the finalized architecture spec: the deterministic compute engine, the 16-float
+SLM vector, the 8-bit sensory flags, and the cascade's stage boundaries.
+
+**Why the model is confined to a vector.** On-device inference is restricted to producing
+`v_SLM`, 16 floats in `0..1`. No autoregressive text generation. Text on a phone at 4%
+battery is unbounded in time and produces output no deterministic layer can check; a fixed
+vector is bounded in time and memory and feeds a linear projection whose contribution can be
+read off by a human. `MathEngine.explain()` names the feature that moved the number. That
+cannot be said of a sentence a model wrote.
+
+**The projection.** `Signal_t = W · v_SLM + w_IMU · a_mag`, clamped to `0..1`. `W` sums to
+exactly 1.0 and `w_IMU = 0.25`, so a device saturated on every channel saturates the signal
+rather than running past it — letting the raw number exceed 1.0 would silently re-scale every
+threshold downstream. Weights are ordered by how *specific* the evidence is to a person in
+danger, not by how loud it is: water and a pinned device are strong; a voice is weaker (a
+voice is also a rescuer's voice); enclosure is weakest, because a phone in a pocket is dark
+too. The IMU term sits outside the vector because it is the one channel still honest when
+every other sensor is blind — a phone buried in rubble hears nothing and sees nothing.
+
+**Where the EMA lives.** The spec writes the smoothing next to the projection:
+`DangerScore_t = DangerScore_{t-1}·(1−α) + Signal_t·α`. That EMA already existed, once, in
+`DangerScore`, which also owns the thresholds and the human-readable explanation. It is
+**not** duplicated in `MathEngine`: two EMAs over the same signal would double the smoothing
+and halve the responsiveness α was chosen for. `MathEngine` produces `Signal_t`;
+`DangerScore` consumes it. **α = 0.35** (`DangerScore.DEFAULT_ALPHA`), up from 0.4 — high
+enough that an IMU spike is visible within two or three ticks, low enough that one noisy
+reading cannot alarm a node alone. The SOS path does not touch it: `raiseSos` sets 1.00
+directly so no smoothing can delay a person who told us themselves.
+
+**The flag byte.** `SensoryFlags` — bit 0 audio water, 1 audio screaming, 2 IMU pinned,
+3 IMU impact, 4 low light, 5 manual SOS, 6 stage-2 enriched, 7 reserved. One byte on every
+envelope including LoRa frames. The full vector is *optional* on the wire and costs 17 bytes
+of a 233-byte frame, so only the Stage 3 enriched broadcast carries it: the flags are what a
+responder triages on, the vector is what the dashboard inspector shows. `MANUAL_SOS` is set
+from the agent's incident state, never from a sensor — no feature vector can assert that a
+human pressed the button, and no classifier may clear it.
+
+**Wire format.** `CompactCodec` version `0x02` inserts the flag byte after `ttl` and appends
+an optional `v_SLM` block (one `u8` per slot, `round(value * 255)`, so a slot survives to
+within 1/255). Nothing speaks `0x01`; there are no deployed nodes to be compatible with.
+
+**Stage boundaries in `NodeAgent`.** Stage 0 (t=0) `raiseSos`; Stage 1 the sensory window
+filling via `senseVector`; Stage 2 the projection plus flag compilation, sub-millisecond;
+Stage 3 `completeSensoryWindow` re-broadcasting with the incident's original timestamp so the
+same incident is updated rather than a second alert raised for the same person.
