@@ -17,6 +17,8 @@ import org.groundzero.mesh.app.NodeIdStore
 import org.groundzero.mesh.app.mesh.MeshStack
 import org.groundzero.mesh.app.transport.GossipOriginTransport
 import org.groundzero.mesh.app.transport.NearbyTransport
+import org.groundzero.mesh.app.node.MeshRole
+import org.groundzero.mesh.app.sensors.SensorBridge
 import org.groundzero.mesh.app.transport.StoreAndForward
 import org.groundzero.mesh.propagation.Gossip
 
@@ -41,6 +43,7 @@ class MeshForegroundService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var wakeLock: PowerManager.WakeLock? = null
     private var transport: NearbyTransport? = null
+    private var sensors: SensorBridge? = null
     val storeAndForward = StoreAndForward()
 
     private val maintenance = object : Runnable {
@@ -95,9 +98,26 @@ class MeshForegroundService : Service() {
         radio.onReceive { from, frame -> MeshStack.ingest(frame, from) }
         radio.start()
 
+        sensors = SensorBridge(this, handler)
+        MeshStack.onRoleChange { applyRole(it) }
+        applyRole(MeshStack.currentRole())
+
         handler.postDelayed(maintenance, MAINTENANCE_INTERVAL_MS)
         handler.postDelayed(heartbeat, NodeAgent.HEARTBEAT_INTERVAL_MS)
         Log.i(TAG, "mesh service up as $localId")
+    }
+
+    /**
+     * Start and stop what the role actually needs.
+     *
+     * Only a NODE senses: a RELAY left in a stairwell should spend its battery carrying other
+     * people's reports, and a GATEWAY is a responder's phone at the perimeter rather than a
+     * casualty's. Gossip keeps running in every role — a phone that stops relaying has left
+     * the mesh.
+     */
+    private fun applyRole(role: MeshRole) {
+        if (role == MeshRole.NODE) sensors?.start() else sensors?.stop()
+        Log.i(TAG, "role is now $role")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -105,6 +125,9 @@ class MeshForegroundService : Service() {
     override fun onDestroy() {
         handler.removeCallbacks(maintenance)
         handler.removeCallbacks(heartbeat)
+        sensors?.stop()
+        sensors = null
+        MeshStack.onRoleChange(null)
         MeshStack.clear()
         transport?.stop()
         transport = null

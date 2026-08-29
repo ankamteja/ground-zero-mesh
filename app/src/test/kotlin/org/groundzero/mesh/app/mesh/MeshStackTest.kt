@@ -1,6 +1,7 @@
 package org.groundzero.mesh.app.mesh
 
 import org.groundzero.mesh.agent.NodeAgent
+import org.groundzero.mesh.app.node.MeshRole
 import org.groundzero.mesh.app.transport.GossipOriginTransport
 import org.groundzero.mesh.propagation.Gossip
 import org.groundzero.mesh.propagation.NodeId
@@ -62,6 +63,56 @@ class MeshStackTest {
         assertEquals(1, board.size)
         assertEquals(a, board.single().cluster.origin)
         assertTrue(board.single().withinBudget)
+    }
+
+    @Test
+    fun `only a node originates`() {
+        install()
+        MeshStack.setRole(MeshRole.RELAY)
+        assertNull(MeshStack.raiseSos(Severity.DROWNING_IMMINENT))
+        assertNull(MeshStack.heartbeatTick())
+
+        MeshStack.setRole(MeshRole.GATEWAY)
+        assertNull(MeshStack.raiseSos(Severity.DROWNING_IMMINENT))
+
+        MeshStack.setRole(MeshRole.NODE)
+        assertNotNull(MeshStack.raiseSos(Severity.DROWNING_IMMINENT))
+    }
+
+    @Test
+    fun `a relay still carries other people's reports`() {
+        install()
+        MeshStack.setRole(MeshRole.RELAY)
+        net.runUntilIdle()
+
+        // A report from elsewhere, arriving on the radio. A relay must still hold and pass it.
+        val elsewhere = NodeAgent(
+            nodeId = b,
+            saltFingerprint = "0".repeat(32),
+            addressZone = "floor-2-east",
+            transport = net.transportFor(b),
+            clockMs = net::nowMs,
+        )
+        elsewhere.raiseSos(Severity.STRUCTURAL_ENTRAPMENT)
+        net.runUntilIdle()
+
+        assertEquals(1, MeshStack.rankedBoard().size)
+    }
+
+    @Test
+    fun `the role change listener fires outside the stack's lock`() {
+        install()
+        val seen = ArrayList<MeshRole>()
+        MeshStack.onRoleChange { role ->
+            // Re-entering the stack from the listener would deadlock if it held the lock.
+            MeshStack.currentRole()
+            seen += role
+        }
+        MeshStack.setRole(MeshRole.RELAY)
+        MeshStack.setRole(MeshRole.RELAY)
+        MeshStack.setRole(MeshRole.GATEWAY)
+
+        assertEquals(listOf(MeshRole.RELAY, MeshRole.GATEWAY), seen)
     }
 
     @Test

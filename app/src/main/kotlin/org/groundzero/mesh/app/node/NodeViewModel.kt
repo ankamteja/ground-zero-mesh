@@ -23,6 +23,7 @@ class NodeViewModel(
     private val danger: DangerScore = DangerScore(),
     private val now: () -> Long = { System.currentTimeMillis() / 1000 },
     private val raiseOnMesh: (Severity) -> Envelope? = MeshStack::raiseSos,
+    private val applyRole: (MeshRole) -> Unit = MeshStack::setRole,
 ) : ViewModel() {
 
     var role by mutableStateOf(MeshRole.NODE)
@@ -46,7 +47,10 @@ class NodeViewModel(
     var lastSosBroadcast by mutableStateOf(false)
         private set
 
-    fun selectRole(next: MeshRole) { role = next }
+    fun selectRole(next: MeshRole) {
+        role = next
+        applyRole(next)
+    }
 
     fun selectSeverity(next: Severity) { selectedSeverity = next }
 

@@ -70,7 +70,15 @@ class MainActivity : ComponentActivity() {
     @androidx.compose.runtime.Composable
     private fun GatewayControl(active: Boolean) {
         var running by remember { mutableStateOf(GatewayController.isRunning) }
-        // The gateway server only makes sense in the Gateway role; hide it otherwise.
+        // Leaving the Gateway role must actually stop serving. Hiding the button while the
+        // server kept running would leave a board being served by a phone that is no longer
+        // the gateway.
+        androidx.compose.runtime.LaunchedEffect(active) {
+            if (!active && GatewayController.isRunning) {
+                GatewayController.stop()
+                running = false
+            }
+        }
         if (!active) return
         Column(Modifier.padding(16.dp)) {
             TextButton(onClick = {
