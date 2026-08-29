@@ -79,6 +79,13 @@ class MeshStackTest {
         assertTrue(MeshStack.rankedBoard().isEmpty())
         assertTrue(MeshStack.recentActivity().isEmpty())
         assertEquals(MeshActivityCounts(0, 0, 0, 0, 0), MeshStack.activityCounts())
+        assertNull(MeshStack.localNodeId())
+    }
+
+    @Test
+    fun `localNodeId is this device's own permanent id once installed`() {
+        install()
+        assertEquals(a, MeshStack.localNodeId())
     }
 
     @Test

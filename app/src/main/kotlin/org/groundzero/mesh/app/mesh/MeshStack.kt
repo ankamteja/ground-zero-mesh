@@ -208,6 +208,11 @@ object MeshStack {
         ResponderRanking.rank(g.clusters(), clockMs(), trustOf = g.dedup()::trustOf)
     }
 
+    /** This device's own permanent id — stable across role changes, null until installed.
+     *  A GATEWAY never appears as an incident (it doesn't sense or originate), but the
+     *  dashboard still needs to say *which* device is serving the board it's looking at. */
+    fun localNodeId(): NodeId? = synchronized(lock) { agent?.nodeId }
+
     /**
      * A responder at the gateway has confirmed [nodeId] found/safe.
      *

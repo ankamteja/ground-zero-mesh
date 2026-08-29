@@ -64,6 +64,7 @@
   .swatch { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   .swatch.node { background: var(--drown); }
   .swatch.relay { border: 1px solid var(--dim); background: transparent; }
+  .swatch.self { background: var(--accent); transform: rotate(45deg); border-radius: 1px; }
 
   aside { padding: 14px 16px 40px; overflow-y: auto; height: 100%; }
   section { margin-bottom: 20px; }
@@ -166,6 +167,7 @@
       <div class="legend">
         <span><i class="swatch node"></i> incident &middot; colour = severity</span>
         <span><i class="swatch relay"></i> relay &middot; carried a report, position unknown</span>
+        <span><i class="swatch self"></i> this device &middot; the responder, fixed at centre</span>
       </div>
     </div>
   </div>
@@ -219,7 +221,7 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var es = null, pollTimer = null, lastGood = 0, usingFixtures = false;
-  var payload = { advice: "", flagBits: [], slotNames: [], clusters: [], links: [] };
+  var payload = { advice: "", flagBits: [], slotNames: [], clusters: [], links: [], self: null };
   var selectedKey = null;
 
   function cssVar(name) {
@@ -309,7 +311,8 @@
       flagBits: (data && data.flagBits) || [],
       slotNames: (data && data.slotNames) || [],
       clusters: (data && data.clusters) || [],
-      links: (data && data.links) || []
+      links: (data && data.links) || [],
+      self: (data && data.self) || null
     };
 
     $("advice").textContent = payload.advice || "—";
@@ -575,6 +578,24 @@
       items.push({ depth: p.depth, kind: "carrier", p: p, carrier: carrier });
     });
 
+    if (payload.self) {
+      // The GATEWAY never appears as an incident — it doesn't sense or originate — but a
+      // responder looking at their own board should still see where they are in it, and
+      // which incidents actually reached this device (whether directly or via a relay
+      // drawn above). Distinct from a "link" item (carrier -> incident, real corroboration
+      // from another node): this is "how this report got to the board you're looking at,"
+      // solid rather than dashed, so the two kinds of connection read differently.
+      var selfPos = project({ x: 0, y: 0, z: 0 }, w, h);
+      if (selfPos) {
+        payload.clusters.forEach(function (c) {
+          var cp = project(c.position, w, h);
+          if (!cp) return;
+          items.push({ depth: Math.max(selfPos.depth, cp.depth) + 0.05, kind: "selfLink", from: selfPos, to: cp, now: now });
+        });
+        items.push({ depth: selfPos.depth, kind: "self", p: selfPos, now: now });
+      }
+    }
+
     items.sort(function (a, b) { return b.depth - a.depth; });
     items.forEach(function (item) { paint(item, line, dim, text, accent, unplaced); });
   }
@@ -591,6 +612,19 @@
       ctx.font = "11px ui-monospace, monospace";
       var front = item.corners.reduce(function (a, c) { return c.depth < a.depth ? c : a; });
       ctx.fillText(item.label, front.x + 6, front.y + 12);
+      return;
+    }
+    if (item.kind === "selfLink") {
+      // Solid, low-alpha — how this incident's report reached the board, distinct from a
+      // "link" item's dashed line (a relay corroborating another node's report).
+      ctx.strokeStyle = accent;
+      ctx.globalAlpha = 0.3;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(item.from.x, item.from.y);
+      ctx.lineTo(item.to.x, item.to.y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
       return;
     }
     if (item.kind === "link") {
@@ -616,6 +650,33 @@
       ctx.fillStyle = dim;
       ctx.font = "10px ui-monospace, monospace";
       ctx.fillText(item.carrier + " (relay, position unknown)", item.p.x + 9, item.p.y + 3);
+      return;
+    }
+    if (item.kind === "self") {
+      // A diamond, not a circle — a GATEWAY is never an incident, so it must never read as
+      // one at a glance. Steady ring (not the incident markers' outward transmit pulse):
+      // this device is the one holding still, not the one reporting.
+      var sp = item.p, d = 6;
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y, d + 6, 0, Math.PI * 2);
+      ctx.globalAlpha = 0.4;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      ctx.fillStyle = accent;
+      ctx.beginPath();
+      ctx.moveTo(sp.x, sp.y - d);
+      ctx.lineTo(sp.x + d, sp.y);
+      ctx.lineTo(sp.x, sp.y + d);
+      ctx.lineTo(sp.x - d, sp.y);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = text;
+      ctx.font = "10px ui-monospace, monospace";
+      ctx.fillText("this device (responder)", sp.x + d + 6, sp.y + 3);
       return;
     }
 

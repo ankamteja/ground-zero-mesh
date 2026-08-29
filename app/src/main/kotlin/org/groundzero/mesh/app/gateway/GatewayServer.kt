@@ -39,6 +39,7 @@ class GatewayServer(
     private val readAsset: (String) -> ByteArray?,
     private val clustersNow: () -> List<RankedIncident>,
     private val onMarkFound: (NodeId) -> Unit = {},
+    private val localNodeId: () -> NodeId? = { null },
 ) : NanoHTTPD(port) {
 
     private val subscribers = CopyOnWriteArrayList<PipedOutputStream>()
@@ -108,11 +109,17 @@ class GatewayServer(
         }
         val flagBits = SensoryFlags.BIT_NAMES.joinToString(",") { quote(it) }
         val slotNames = MathEngine.slotNames().joinToString(",") { quote(it) }
+        // The GATEWAY itself never appears as an incident — it doesn't sense or originate —
+        // but a responder looking at the board still needs to know which device is serving
+        // it. Not a TwinNode: it never ranks, never carries a report, isn't part of the
+        // board at all, just a fixed "you are here" marker at the schematic centre.
+        val self = localNodeId()?.let { "{\"nodeId\":${quote(it.canonical())}}" } ?: "null"
         return "{\"advice\":${quote(advise(ranked))}," +
             "\"flagBits\":[$flagBits]," +
             "\"slotNames\":[$slotNames]," +
             "\"clusters\":${ClusterJson.array(ranked, nowMs, twinByKey)}," +
-            "\"links\":[$links]}"
+            "\"links\":[$links]," +
+            "\"self\":$self}"
     }
 
     /**

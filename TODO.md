@@ -127,11 +127,29 @@ Tick items in the same PR that does the work.
       `docs/architecture.md` for the full landing. **Not yet verified on a real device or
       compiled in CI** — this environment has no Android SDK configured; `core` is tested
       and green, the `app`-side changes are reviewed but unbuilt.
-- [ ] `[B]` **3D dashboard camera centers wrong, reported not investigated.** User, verbatim:
-      "in ui its centering to someother place and not to responders node." Likely the
-      canvas renderer's initial orbit target/pan origin (the `camera` object in
-      `assets/dashboard/index.html`) isn't tied to any real node — possibly the schematic
-      building's `(0,0,0)` rather than the responder's own device or the incident cluster.
+- [x] `[B]` **3D dashboard camera centering, likely resolved as a side effect (2026-08-30) —
+      please confirm on device.** Original report: "in ui its centering to someother place
+      and not to responders node." Root cause: there was no responder-node marker at all —
+      the camera's orbit target (`camera` object, `assets/dashboard/index.html`) was always
+      the schematic origin `(0,0,0)`, but nothing was ever drawn there, so the view read as
+      centering on empty space. The "you are here" marker added below now sits at that exact
+      point, so the camera's existing orbit target and the responder's own position are the
+      same point by construction — no camera code changed. Flagged `[x]` provisionally;
+      confirm the view now reads correctly rather than treating this as fully closed.
+- [x] `[B]` **repeated SOS presses were raising a new incident each time, not updating one
+      (2026-08-30).** Found on the first real two-phone run. `NodeAgent.raiseSos` now reuses
+      the active incident's dedup-key timestamp on a re-press (same mechanism the Stage 3
+      re-broadcast already used, now also triggered by the person, not only the sensory
+      window); a press after `clearIncident` still starts a genuinely new incident. A second
+      bug caught in the same fix: the emitted envelope was stamping the raw press time even
+      after this change, which would have silently defeated it — see `docs/architecture.md`.
+- [x] `[B]` **no visible connection between the responder and the reports on its own board
+      (2026-08-30).** Side effect of the digital-twin carrier fix above: excluding the
+      origin from its own corroborator list means a direct link (no relay) now draws zero
+      carrier lines, so a two-phone run with no relay showed no connection at all. Fixed by
+      adding an explicit `self` marker (`MeshStack.localNodeId()` -> `GatewayServer.payload`)
+      plus a distinct solid connection line from it to every incident, separate from the
+      dashed relay-corroboration lines. See `docs/architecture.md`.
 
 ## Open assumptions (name them in the deck and in UI copy)
 

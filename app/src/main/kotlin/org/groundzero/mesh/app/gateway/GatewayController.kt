@@ -28,6 +28,7 @@ object GatewayController {
         port: Int = GatewayServer.DEFAULT_PORT,
         clusterSource: () -> List<RankedIncident>,
         onMarkFound: (NodeId) -> Unit = MeshStack::markPeerFound,
+        localNodeId: () -> NodeId? = MeshStack::localNodeId,
     ) {
         if (server != null) return
         val assets = context.applicationContext.assets
@@ -38,6 +39,7 @@ object GatewayController {
             },
             clustersNow = clusterSource,
             onMarkFound = onMarkFound,
+            localNodeId = localNodeId,
         )
         try {
             srv.start()

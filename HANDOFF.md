@@ -87,15 +87,34 @@ envelope honestly carries none`. `./gradlew :core:test` green.
    assumption reworded to "mostly not solved" now that a real fix exists for the minority
    of incidents where GPS is available.
 
-## Separate, unrelated: reported UI bug, not investigated
+## Update (later same session): the camera bug, and two more real bugs from live testing
 
-User, verbatim: **"also in ui its centering to someother place and not to responders
-node"** — about the 3D dashboard view (`assets/dashboard/index.html`'s canvas renderer).
-Sounds like the camera's initial orbit target / pan origin doesn't line up with any real
-node — possibly centering on the schematic building's `(0,0,0)` origin rather than the
-responder's own device or the incident cluster. Not looked into at all yet. Camera state
-lives in the `camera` object (`yaw/pitch/dist/panX/panY`) inside the `<script>` block —
-start there.
+The camera-centering report below turned out to have a simple cause, fixed as a side
+effect of adding a "you are here" marker (see next section): there was no responder-node
+marker at all, so the camera's always-fixed orbit target `(0,0,0)` was centering on empty
+space. The marker now sits at that exact point. **Not independently re-verified on
+device** — flagged `[x]` provisionally in `TODO.md`, please confirm the view now reads
+correctly.
+
+Two more real bugs surfaced running an actual two-phone (victim + responder, no relay)
+session, both fixed and tested (`./gradlew test` green):
+
+- **Repeated SOS presses were raising a new incident each time.** `NodeAgent.raiseSos`
+  minted a fresh dedup-key timestamp on every call; a re-press before `clearIncident`
+  should update the same incident instead — see `docs/architecture.md`'s entry on this. A
+  second bug caught in the same fix: the emitted envelope was still stamping the raw press
+  time even after the dedup-key logic changed, which would have silently defeated it.
+- **No visible connection between the responder and its own board's incidents**, on a
+  topology with no relay. Side effect of the earlier `DigitalTwin` carrier-exclusion fix:
+  excluding the origin from its own corroborator list means a *direct* link now draws zero
+  carrier lines. Fixed with an explicit `self` marker (`MeshStack.localNodeId()` threaded
+  through `GatewayServer`) plus a distinct solid connection line per incident, separate
+  from the dashed relay-corroboration lines.
+
+Original report, for the record: **"also in ui its centering to someother place and not
+to responders node"** — about the 3D dashboard view's canvas renderer. Camera state lives
+in the `camera` object (`yaw/pitch/dist/panX/panY`) inside `assets/dashboard/index.html`'s
+`<script>` block, if this needs revisiting.
 
 ## Where things physically stand (hardware test session)
 

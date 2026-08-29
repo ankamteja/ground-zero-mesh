@@ -870,5 +870,61 @@ Android SDK configured) — flagging rather than silently claiming a build was v
 
 ### What's still open
 
-The 3D-dashboard camera-centering bug (reported, not investigated — see `TODO.md`). No
-other GPS follow-up remains from the original ledger entry above.
+No GPS follow-up remains from the original ledger entry above. The 3D-dashboard
+camera-centering bug mentioned here was reported and, at the time this section was
+written, not yet investigated — see the entry right below for what that turned out to be.
+
+---
+
+## Two bugs from the first live two-phone run, and a requested "you are here" marker (2026-08-30)
+
+The three-phone demo kit shipped a victim/relay/responder split, but the actual first run
+was two phones — victim and responder, no relay in between. That topology, plus a tester
+pressing SOS several times in a row, surfaced two real problems the simulated topology
+never would have, plus a legitimate usability request.
+
+### A re-press was raising a second incident, not updating the one already in flight
+
+`NodeAgent.raiseSos` minted a fresh `atSeconds` on every call. `Envelope.dedupKey` is
+`nodeId + timestamp`, so a second SOS press before the first incident was cleared produced
+a second, distinct dedup key — the board filled with near-duplicate entries from one
+person restating the same emergency, exactly the "multiplying instead of updating" a real
+victim's repeated presses would do under stress.
+
+Fixed by having `raiseSos` reuse `activeIncident?.atSeconds` when an incident is already
+open: the *first* press still anchors the dedup key, and every press after it — until
+[`clearIncident`](this file's own Phase-7 entry) is called — updates that same incident in
+place, carrying whatever severity was most recently chosen. This is the identical mechanism
+the Stage 3 re-broadcast already relies on (reusing the Stage 1 timestamp so downstream
+layers update, not duplicate); it's now also triggered by the person, not only by the
+sensory window closing. A press after `clearIncident` (rescued, cancelled) still starts a
+genuinely new incident, dedup key and all. Caught and fixed alongside it: the envelope
+`raiseSos` actually emitted was still stamping the *raw* `atSeconds` argument rather than
+`incident.atSeconds` — the dedup-key fix would have been silently defeated by this without
+the second half of the change.
+
+### `DigitalTwin`'s carrier-exclusion fix (closed earlier the same day) had a side effect
+
+Excluding the origin from its own corroborator list (see the earlier entry above, "the
+digital twin drew the victim as its own relay") is correct — a direct victim -> responder
+link has no real relay — but it also meant a direct link now draws **zero** carrier lines
+at all, so "is this device actually connected to that report" became invisible on a real
+two-phone run with no relay in the topology. Not a regression of that fix; a gap it left.
+
+### Fix: an explicit "this device" marker, plus a distinct connection line per incident
+
+Requested directly, and reasonable: a responder looking at their own board should be able
+to see which incidents actually reached this device. `MeshStack.localNodeId()` (this
+device's own permanent id, mirroring how `currentRole()` already works) is threaded through
+`GatewayController` -> `GatewayServer.payload()` as a new top-level `self: {"nodeId": ...}`
+field, `null` until the stack is installed. `core` is untouched — "self" is not a concept
+`DigitalTwin` or any `TwinNode` needs to know about; it's purely what the dashboard adds on
+top of the same board data.
+
+The dashboard draws it as a small teal diamond fixed at the schematic centre `(0,0,0)`,
+labelled "this device (responder)" — deliberately not a circle, so it can never be mistaken
+for an incident marker (a GATEWAY never senses or originates, so it must never look like
+one). A solid, low-alpha line runs from that marker to every incident's position — distinct
+from the dashed, packet-animated `link` lines that represent a relay's actual corroboration
+of another node's report. The two kinds of connection now read differently: "how this
+device's board sees the room" versus "who corroborated whom."
