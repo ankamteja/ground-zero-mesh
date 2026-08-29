@@ -18,4 +18,4 @@ dependencyResolutionManagement {
 rootProject.name = "ground-zero-mesh"
 
 include(":core")
-// include(":app")   // enabled in phase2/nearby-transport — the :app module needs the Android SDK
+include(":app")
