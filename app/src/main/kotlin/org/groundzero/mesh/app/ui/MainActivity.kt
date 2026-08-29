@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.groundzero.mesh.app.gateway.GatewayController
 import org.groundzero.mesh.app.gateway.GatewayServer
+import org.groundzero.mesh.app.mesh.MeshStack
 import org.groundzero.mesh.app.node.MeshRole
 import org.groundzero.mesh.app.node.NodeScreen
 import org.groundzero.mesh.app.node.NodeViewModel
@@ -76,9 +77,7 @@ class MainActivity : ComponentActivity() {
                 if (running) {
                     GatewayController.stop()
                 } else {
-                    // Feed is ResponderRanking.rank(gossip.clusters(), now) once the mesh
-                    // stack runs in the service (Step 2); empty list until then.
-                    GatewayController.start(this@MainActivity) { emptyList() }
+                    GatewayController.start(this@MainActivity, clusterSource = MeshStack::rankedBoard)
                 }
                 running = GatewayController.isRunning
             }) {

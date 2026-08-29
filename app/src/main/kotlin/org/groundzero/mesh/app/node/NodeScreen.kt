@@ -60,8 +60,9 @@ fun NodeScreen(vm: NodeViewModel, modifier: Modifier = Modifier) {
                 Text("Send SOS")
             }
             vm.lastSos?.let {
+                val fate = if (vm.lastSosBroadcast) "broadcast" else "NOT SENT — mesh service is not running"
                 Text(
-                    "sent at t=${it.atSeconds}s, severity ${it.severity.name.lowercase()}",
+                    "t=${it.atSeconds}s, severity ${it.severity.name.lowercase()} · $fate",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

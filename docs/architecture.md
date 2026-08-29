@@ -327,3 +327,53 @@ carried the incident, first included), and `corroboration` uses `corroborationCo
 (`size - 1`). If a true fold count is wanted on the board, `IncidentCluster` needs a
 `reportCount` field maintained in `DedupCluster.ingest` — a `core` change, so it is a PR
 conversation, not a local edit.
+
+---
+
+## Wiring the mesh stack into the device (Phase 7, Step 2)
+
+`core` composes an agent and a gossip layer around one `Transport`. On a device both live in
+the same process, which the `core` seam does not by itself account for, so three decisions
+were needed. None of them changed `core`.
+
+**The agent must not talk to the radio directly.** `NodeAgent` holds a `Transport` and sends
+its own envelopes down it. With `Gossip` on the same device that is wrong twice over: the
+propagation key is never marked seen, so the first echo of the node's own report comes back
+as news and is re-forwarded; and the envelope never enters the local cluster store, so a
+gateway phone does not show the SOS its own user just raised. `GossipOriginTransport`
+decorates the transport for the agent only — its `send` decodes the frame and calls
+`Gossip.originate`, while `Gossip` holds the real transport. One frame reaches the radio, the
+key is marked, the envelope is folded in on the way past.
+
+**One owner for the stack's lifetime.** `MeshForegroundService` builds
+`Gossip(radio) + NodeAgent(GossipOriginTransport(radio, gossip))` and publishes them through
+the `MeshStack` process singleton, mirroring `GatewayController`. The Activity and the
+gateway server borrow it; neither can own it. Every `MeshStack` call is inert while nothing
+is installed, so the UI works before the service is up.
+
+**Serialised, not thread-confined.** `NodeAgent` and `Gossip` are not thread-safe and three
+threads want in: the UI thread (SOS), a Nearby callback thread (inbound frames) and a
+NanoHTTPD worker (the dashboard reading the board). `MeshStack` takes a lock rather than
+requiring every caller to hop to one looper — a rule that would be silently broken by the
+first new call site. Contention is negligible at mesh message rates.
+
+Ticker cadences follow `NodeAgent`'s split-ticker design: the heartbeat runs at
+`NodeAgent.HEARTBEAT_INTERVAL_MS` (10 s) on its own `Handler` post, separate from the 30 s
+maintenance tick that decays the `PeerTable` and sweeps store-and-forward. A calm node's
+heartbeat emits nothing, so the ticker is nearly free when there is nothing to say.
+
+### Chosen defaults
+
+- **`saltFingerprint`** = first 32 hex chars of `SHA-256(nodeId.canonical())`, derived in
+  `NodeIdStore` rather than stored. It is a fingerprint of the identity, not a secret: it
+  distinguishes two nodes claiming the same id and nothing more. A real per-device salt —
+  one that makes the id itself unlinkable — needs its own store and a decision about who may
+  re-link it. Not made yet.
+- **`addressZone`** = `"unset"`. Localisation is not solved, and a fabricated coordinate
+  would read as solved on the dashboard. A responder-entered zone is the intended fix.
+
+### Known gap
+
+`NodeAgent.livenessTick` is not driven. It expects a `MutableMap<NodeId, Peer>` and the app
+keeps peers in `PeerTable`, whose own `decayTick` runs in the maintenance tick — peers still
+decay and go SILENT on time. The agent's copy of that concern is unused on device.

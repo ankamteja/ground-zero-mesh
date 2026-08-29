@@ -7,16 +7,22 @@ import androidx.lifecycle.ViewModel
 import org.groundzero.mesh.agent.DangerScore
 import org.groundzero.mesh.agent.ScoreExplanation
 import org.groundzero.mesh.agent.SosInput
+import org.groundzero.mesh.app.mesh.MeshStack
+import org.groundzero.mesh.propagation.Envelope
 import org.groundzero.mesh.propagation.Severity
 
 /**
  * Screen state for the Node UI. Holds the `core` [DangerScore] and surfaces its
  * [DangerScore.explain] verbatim — there is no AI at this layer, just an EMA and two
  * thresholds, and showing that earns more credibility than hiding it.
+ *
+ * [raiseOnMesh] is the seam to the running stack; it is injected so this class stays a plain
+ * JVM unit test subject.
  */
 class NodeViewModel(
     private val danger: DangerScore = DangerScore(),
     private val now: () -> Long = { System.currentTimeMillis() / 1000 },
+    private val raiseOnMesh: (Severity) -> Envelope? = MeshStack::raiseSos,
 ) : ViewModel() {
 
     var role by mutableStateOf(MeshRole.NODE)
@@ -32,6 +38,14 @@ class NodeViewModel(
     var explanation by mutableStateOf(danger.explain())
         private set
 
+    /**
+     * Whether the last SOS actually went on the wire. False when the mesh service is not
+     * running — a person who pressed the button must not be shown a screen that implies help
+     * was called when nothing left the phone.
+     */
+    var lastSosBroadcast by mutableStateOf(false)
+        private set
+
     fun selectRole(next: MeshRole) { role = next }
 
     fun selectSeverity(next: Severity) { selectedSeverity = next }
@@ -43,6 +57,8 @@ class NodeViewModel(
      */
     fun raiseSos() {
         lastSos = SosInput(severity = selectedSeverity, atSeconds = now())
+        // The agent broadcasts synchronously inside this call, before anything below runs.
+        lastSosBroadcast = raiseOnMesh(selectedSeverity) != null
         danger.observe(1.0)
         explanation = danger.explain()
     }

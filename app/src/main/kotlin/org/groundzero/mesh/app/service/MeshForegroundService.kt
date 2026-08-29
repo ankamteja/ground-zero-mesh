@@ -12,9 +12,13 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
+import org.groundzero.mesh.agent.NodeAgent
 import org.groundzero.mesh.app.NodeIdStore
+import org.groundzero.mesh.app.mesh.MeshStack
+import org.groundzero.mesh.app.transport.GossipOriginTransport
 import org.groundzero.mesh.app.transport.NearbyTransport
 import org.groundzero.mesh.app.transport.StoreAndForward
+import org.groundzero.mesh.propagation.Gossip
 
 /**
  * Keeps the mesh alive with the screen off.
@@ -23,6 +27,14 @@ import org.groundzero.mesh.app.transport.StoreAndForward
  * service runs foreground (type `connectedDevice`) and holds a partial wake lock so the
  * radios keep working. On OEM-throttled devices, also keep the app in the foreground
  * during a demo — the wake lock is necessary, not always sufficient.
+ *
+ * It also owns the mesh stack: the transport, [Gossip], and the [NodeAgent] wired together
+ * and published through [MeshStack] for the UI and the gateway server to borrow.
+ *
+ * **Known gap:** [NodeAgent.livenessTick] is not driven. It expects a
+ * `MutableMap<NodeId, Peer>`, and the app keeps peers in [org.groundzero.mesh.app.transport.PeerTable]
+ * instead; that table's own `decayTick` runs in [maintenance], so peers still decay and go
+ * SILENT on time. The agent's copy of that concern is simply unused here.
  */
 class MeshForegroundService : Service() {
 
@@ -39,6 +51,21 @@ class MeshForegroundService : Service() {
         }
     }
 
+    /**
+     * The agent's own cadence. Separate from [maintenance] on purpose — sensing, talking and
+     * peer upkeep are independently tunable in [NodeAgent], and merging them here would
+     * rebuild the lockstep loop that class exists to avoid.
+     *
+     * A calm node's heartbeat emits nothing, so this ticker is nearly free when there is
+     * nothing to say.
+     */
+    private val heartbeat = object : Runnable {
+        override fun run() {
+            MeshStack.heartbeatTick()
+            handler.postDelayed(this, NodeAgent.HEARTBEAT_INTERVAL_MS)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         createChannel()
@@ -49,11 +76,27 @@ class MeshForegroundService : Service() {
             .apply { setReferenceCounted(false); acquire() }
 
         val localId = NodeIdStore.get(this)
-        transport = NearbyTransport(this, localId).also {
-            it.onReceive { from, frame -> Log.d(TAG, "rx ${frame.size}B from $from") }
-            it.start()
-        }
+        val radio = NearbyTransport(this, localId)
+        transport = radio
+
+        val clock = { System.currentTimeMillis() }
+        val gossip = Gossip(radio, clockMs = clock)
+        val agent = NodeAgent(
+            nodeId = localId,
+            saltFingerprint = NodeIdStore.saltFingerprint(localId),
+            // TODO: a responder-entered zone. Localisation is not solved, and a fabricated
+            // coordinate here would read as solved on the dashboard.
+            addressZone = UNSET_ZONE,
+            transport = GossipOriginTransport(radio, gossip),
+            clockMs = clock,
+        )
+        MeshStack.install(gossip, agent, clock)
+
+        radio.onReceive { from, frame -> MeshStack.ingest(frame, from) }
+        radio.start()
+
         handler.postDelayed(maintenance, MAINTENANCE_INTERVAL_MS)
+        handler.postDelayed(heartbeat, NodeAgent.HEARTBEAT_INTERVAL_MS)
         Log.i(TAG, "mesh service up as $localId")
     }
 
@@ -61,6 +104,8 @@ class MeshForegroundService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(maintenance)
+        handler.removeCallbacks(heartbeat)
+        MeshStack.clear()
         transport?.stop()
         transport = null
         wakeLock?.let { if (it.isHeld) it.release() }
@@ -100,6 +145,9 @@ class MeshForegroundService : Service() {
         private const val NOTIF_ID = 1
         private const val WAKE_LOCK_TAG = "groundzero:mesh"
         private const val MAINTENANCE_INTERVAL_MS = 30_000L
+
+        /** No zone until a responder can enter one. See the `addressZone` TODO in onCreate. */
+        const val UNSET_ZONE = "unset"
 
         fun start(context: Context) {
             val intent = Intent(context, MeshForegroundService::class.java)
