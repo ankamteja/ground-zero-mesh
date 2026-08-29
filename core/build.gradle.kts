@@ -21,6 +21,8 @@ tasks.register<JavaExec>("runSim") {
     description = "Run the mesh simulation and print the report"
     mainClass.set("org.groundzero.mesh.simulation.SimulationRunner")
     classpath = sourceSets["main"].runtimeClasspath
+    // Relative --json paths should mean what they say from the repo root, not core/.
+    workingDir = rootProject.projectDir
     args = (project.findProperty("simArgs") as String?)?.split(" ") ?: emptyList()
 }
 
