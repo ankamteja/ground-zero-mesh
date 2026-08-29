@@ -99,6 +99,39 @@ class NodeAgentTest {
     }
 
     @Test
+    fun `pressing sos again while one is already active updates it, does not raise a second incident`() {
+        val clock = Clock()
+        val (node, _) = agent(clock)
+
+        val first = node.raiseSos(Severity.STRUCTURAL_ENTRAPMENT, atSeconds = 1_724_900_000L)
+        clock.advance(3_000)
+        // A person re-pressing SOS a few seconds later, before the sensory window closes and
+        // before anyone cleared the incident, is restating urgency about the same emergency —
+        // not reporting a second one.
+        val second = node.raiseSos(Severity.DROWNING_IMMINENT, atSeconds = 1_724_900_003L)
+
+        assertEquals(
+            first.dedupKey, second.dedupKey,
+            "same person, same incident — a re-press must update the board entry, not multiply it",
+        )
+        assertEquals(1_724_900_000L, second.timestamp, "the original incident's anchor wins, not the new press time")
+        assertEquals(Severity.DROWNING_IMMINENT, second.severity, "the latest severity the person chose still ships")
+    }
+
+    @Test
+    fun `sos after the incident is cleared starts a genuinely new one`() {
+        val clock = Clock()
+        val (node, _) = agent(clock)
+
+        val first = node.raiseSos(Severity.STRUCTURAL_ENTRAPMENT, atSeconds = 1_724_900_000L)
+        node.clearIncident()
+        clock.advance(60_000)
+        val second = node.raiseSos(Severity.DROWNING_IMMINENT, atSeconds = 1_724_900_060L)
+
+        assertTrue(first.dedupKey != second.dedupKey, "rescued and pressing again is a new incident")
+    }
+
+    @Test
     fun `a classifier that throws cannot take the agent down or undo the override`() {
         val clock = Clock()
         val exploding = SensoryClassifier { error("model failed to load") }

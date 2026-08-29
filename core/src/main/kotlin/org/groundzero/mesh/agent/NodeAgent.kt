@@ -212,11 +212,19 @@ class NodeAgent(
      * that had to climb an exponential moving average would be smoothed into invisibility
      * for several ticks, and those ticks are the ones that matter. This is a deliberate,
      * documented divergence from the reference implementation.
+     *
+     * A press while an SOS is already active (not yet [clearIncident]) reuses that
+     * incident's [Incident.atSeconds] rather than minting a new one. [Envelope.dedupKey] is
+     * `nodeId + timestamp`, so this is what makes a second press *update* the same person's
+     * incident on the responder board instead of raising a second alert for them — the
+     * exact mechanism the Stage 3 re-broadcast already relies on, just triggered by the
+     * person restating urgency instead of by the sensory window closing. A press after
+     * [clearIncident] (rescued, cancelled) starts a genuinely new incident as before.
      */
     fun raiseSos(severity: Severity, atSeconds: Long = clockMs() / 1000): Envelope {
         val incident = Incident(
             severity = severity,
-            atSeconds = atSeconds,
+            atSeconds = activeIncident?.atSeconds ?: atSeconds,
             openedAtMs = clockMs(),
         )
         activeIncident = incident
@@ -229,7 +237,7 @@ class NodeAgent(
                 tier = EpistemologyTier.PRATYAKSA,
                 severity = severity,
                 score = OVERRIDE_SCORE,
-                timestampSeconds = atSeconds,
+                timestampSeconds = incident.atSeconds,
                 views = listOf("OVERRIDE_ACTIVE"),
             ),
         )
