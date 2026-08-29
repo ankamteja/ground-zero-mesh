@@ -36,6 +36,14 @@ data class IncidentCluster(
     val featureVector: org.groundzero.mesh.agent.SlmFeatureVector? = null,
     /** True once a report for this incident arrived first-hand rather than as testimony. */
     val firstHandHeld: Boolean = false,
+    /**
+     * Every [DedupCluster.ingest] call folded into this incident, including repeats from a
+     * relay that has already reported it. Unlike [corroborators].size (distinct relayers)
+     * or [corroborationCount] (that minus the first), this is the true raw fold count — how
+     * many times the mesh told this node about the same person, not how many different
+     * nodes told it.
+     */
+    val reportCount: Int = 1,
 ) {
     /** Independent relayers beyond the first. Zero means single-sourced. */
     val corroborationCount: Int get() = maxOf(0, corroborators.size - 1)
@@ -113,6 +121,7 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
                 flags = (existing.flags.toInt() or envelope.flags.toInt()).toByte(),
                 featureVector = envelope.featureVector ?: existing.featureVector,
                 firstHandHeld = existing.firstHandHeld || isFirstHand,
+                reportCount = existing.reportCount + 1,
             )
         }
 

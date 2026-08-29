@@ -34,6 +34,7 @@ class ClusterJsonTest {
         slm: String? = null,
         flags: Byte = 0,
         vector: SlmFeatureVector? = null,
+        reportCount: Int = relayers,
     ) = IncidentCluster(
         key = key,
         origin = NodeId(1L),
@@ -49,6 +50,7 @@ class ClusterJsonTest {
         flags = flags,
         featureVector = vector,
         firstHandHeld = firstHand,
+        reportCount = reportCount,
     )
 
     private fun json(
@@ -126,9 +128,13 @@ class ClusterJsonTest {
     }
 
     @Test
-    fun reportCountFallsBackToDistinctRelayers() {
-        val j = json(listOf(cluster("k-1", "z", Severity.STRUCTURAL_ENTRAPMENT, danger = 0.7, relayers = 5)))
-        assertTrue(j.contains("\"reportCount\":5"))
+    fun reportCountIsTheRawFoldCountNotJustDistinctRelayers() {
+        // 5 distinct relayers, but 9 folds — a repeat relay bumps reportCount without adding
+        // a new corroborator. See IncidentCluster.reportCount / DedupClusterTest in core.
+        val j = json(
+            listOf(cluster("k-1", "z", Severity.STRUCTURAL_ENTRAPMENT, danger = 0.7, relayers = 5, reportCount = 9)),
+        )
+        assertTrue(j.contains("\"reportCount\":9"))
         assertTrue(j.contains("\"corroboration\":4"))
     }
 

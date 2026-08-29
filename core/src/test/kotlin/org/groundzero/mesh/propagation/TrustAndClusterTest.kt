@@ -147,6 +147,19 @@ class DedupClusterTest {
     }
 
     @Test
+    fun `reportCount folds every ingest, not just distinct relayers`() {
+        val clusters = DedupCluster()
+        clusters.ingest(report(), null, 1_000) // the origin's own send
+        clusters.ingest(report(), relayA, 1_100)
+        clusters.ingest(report(), relayA, 1_200) // relayA again — a genuine repeat, not new corroboration
+        clusters.ingest(report(), relayB, 1_300)
+
+        val incident = clusters.clusters().single()
+        assertEquals(4, incident.reportCount, "every fold counts, including relayA's repeat")
+        assertEquals(2, incident.corroborators.size, "but only two distinct relayers ever carried it")
+    }
+
+    @Test
     fun `a relay that corroborates what we hold earns trust`() {
         val clusters = DedupCluster()
         clusters.ingest(report(), relayA, 1_000)

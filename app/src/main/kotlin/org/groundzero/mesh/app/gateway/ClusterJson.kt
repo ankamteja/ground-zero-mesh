@@ -12,10 +12,10 @@ import org.groundzero.mesh.gateway.TwinNode
  * canonical ordering. The field names below are exactly what `assets/dashboard/index.html`
  * reads; the two must move together.
  *
- * `reportCount` has no true source yet: [org.groundzero.mesh.propagation.IncidentCluster]
- * counts distinct relayers, not raw reports folded in. `corroborators.size` is the closest
- * honest proxy (every distinct node that carried this incident, including the first). A
- * real fold count on `IncidentCluster` is an open item — see `TODO.md`.
+ * `reportCount` is [org.groundzero.mesh.propagation.IncidentCluster.reportCount] — every
+ * `DedupCluster.ingest` fold, including a repeat from a relay that already reported this
+ * incident. `corroboration` is a different, smaller number: distinct relayers beyond the
+ * first (see [org.groundzero.mesh.propagation.IncidentCluster.corroborationCount]).
  */
 object ClusterJson {
 
@@ -49,7 +49,7 @@ object ClusterJson {
         num("corroboration", c.corroborationCount.toString()); append(',')
         num("dangerScore", trim(c.dangerScore)); append(',')
         num("lastSeenSecondsAgo", (c.ageMs(nowMs) / 1000).coerceAtLeast(0).toString()); append(',')
-        num("reportCount", c.corroborators.size.toString()); append(',')
+        num("reportCount", c.reportCount.toString()); append(',')
         // index+1 while inside the dispatch budget; null past it — still listed, not prioritised.
         num("recommendedActionRank", if (r.withinBudget) (index + 1).toString() else "null"); append(',')
         num("priority", trim(r.priority)); append(',')

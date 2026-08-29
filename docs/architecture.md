@@ -334,14 +334,16 @@ of the same rule drifting on its own — deleted in `phase6/wire-gateway`.
   model, no internet. A real `AiAdvisor` seam, if wanted, belongs in `core` next to
   `ResponderRanking`, not in the app.
 
-### Open gap: no true fold count
+### The fold count is now real (closed 2026-08-30)
 
-`RankedIncident` / `IncidentCluster` carry no count of raw reports folded in —
-`corroborators` is a `Set<NodeId>` of distinct relayers. The dashboard's `reportCount`
-therefore uses `corroborators.size` as the closest honest proxy (distinct nodes that
-carried the incident, first included), and `corroboration` uses `corroborationCount`
-(`size - 1`). If a true fold count is wanted on the board, `IncidentCluster` needs a
-`reportCount` field maintained in `DedupCluster.ingest` — a `core` change; see `TODO.md`.
+`RankedIncident` / `IncidentCluster` used to carry no count of raw reports folded in —
+`corroborators` is a `Set<NodeId>` of distinct relayers, so the dashboard's `reportCount`
+stood in with `corroborators.size` (distinct nodes that carried the incident, first
+included). `IncidentCluster.reportCount` now increments on every `DedupCluster.ingest`
+fold, including a repeat from a relay that already reported this incident — the number a
+"reports folded" label actually promises. `corroboration` is still the smaller, different
+number: `corroborationCount` (`corroborators.size - 1`), distinct relayers beyond the
+first. `ClusterJson.reportCount` reads the new field.
 
 ### The sensory-flag pipeline reached everywhere except the real dashboard (closed 2026-08-30)
 

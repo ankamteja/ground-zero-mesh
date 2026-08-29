@@ -89,9 +89,9 @@ Tick items in the same PR that does the work.
       propagates a GONE signal hop-by-hop.
 - [ ] `[B]` `Peer.healthy` still has no production reader — related to the above; likely
       resolves once something downstream actually consumes peer liveness/health.
-- [ ] `[A]` `IncidentCluster` has no true fold count of raw reports; `ClusterJson`'s
-      `reportCount` uses `corroborators.size` as the closest honest proxy. Add a real
-      `reportCount` field maintained in `DedupCluster.ingest` if the board needs it.
+- [x] `[A]` `IncidentCluster.reportCount` (closed 2026-08-30) — a real per-`ingest` fold
+      count, distinct from `corroborators.size`. `ClusterJson`'s `reportCount` field now
+      uses it.
 
 ## Open assumptions (name them in the deck and in UI copy)
 
