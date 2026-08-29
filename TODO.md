@@ -66,8 +66,10 @@ Tick items in the same PR that does the work.
   - [x] `[B]` `MeshStack` process singleton — service installs, UI + gateway borrow, serialised access
   - [x] `[B]` SOS button reaches the agent; the screen says when a press did *not* reach the wire
   - [ ] `[B]` `NodeAgent.livenessTick` still not driven (`PeerTable.decayTick` covers peer decay) — see `docs/architecture.md`
-- [ ] `[B]` Step 3 — `SensorBridge`: mic RMS / accel / light -> `senseTick`; snapshot -> `completeSensoryWindow`
-- [ ] `[B]` Step 4 — role switch controls what runs (Gateway server+hotspot / Node agent+sensors / Relay gossip-only)
+- [x] `[B]` Step 3 — `SensorBridge`: accel / light -> `senseVector`; window peaks -> `completeSensoryWindow`
+  - [ ] `[B]` microphone RMS still missing — needs `RECORD_AUDIO` + an `AudioRecord` loop and a device to verify against
+- [x] `[B]` Step 4 — role switch controls what runs (Gateway server / Node agent+sensors / Relay gossip-only)
+  - [ ] `[B]` gateway hotspot still cannot be opened programmatically without system permissions — responder opens it by hand
 - [ ] `[B]` Step 5 — 3-phone field test; per-API permission matrix on oldest + newest phone; record hardware in PR body
 
 ## Phase 5 — LoRa bridge  `[B]`

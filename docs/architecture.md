@@ -516,3 +516,55 @@ penalty for a contradicting relay, the ranked board with reasons, the twin, and 
 
 `SimulationRunnerTest` asserts it still runs and that the enriched frame still fits 233
 bytes — cheap to assert, expensive to discover on a projector.
+
+---
+
+## Sensors and the role runtime (Phases 11–12, device Steps 3–4)
+
+### Normalisation is where a units bug hides
+
+`SensorNormalisation` is pure and Android-free precisely because this is the layer that can
+be silently wrong: an accelerometer reading in m/s² handed to something expecting `0..1`
+saturates every threshold forever and nothing ever errors. It is therefore the layer with
+plain unit tests and no device requirement.
+
+- **shock** — distance from gravity in *either* direction, so free fall (near 0) and impact
+  (far above 9.81) both count. A still phone reads 0.
+- **pinned** — stillness × flatness. This is honestly named in the docs as stillness and
+  orientation, **not** entrapment: a phone face-up on a desk scores high, which is why the
+  classifier requires darkness alongside it and the Math Engine weights it below the channels
+  specific to a person in trouble.
+- **ambientLight** — logarithmic. The difference between 0 and 10 lux is a sealed void versus
+  a room with a crack of light; 5,000 versus 10,000 lux is "outdoors" either way. A linear
+  scale would compress the only informative part of the range.
+
+A device with no light sensor reports the neutral 0.5 rather than claiming darkness.
+
+### Window peaks, not averages
+
+From the moment an SOS opens the sensory window, `SensorBridge` accumulates the **strongest**
+reading per channel (and the *darkest* light) and hands that over as Stage 3 at 25 s, before
+the agent's 30 s window closes. A phone that was underwater for four seconds of a thirty
+second window was underwater; averaging that away is how a casualty gets scored as calm.
+
+### What the role actually controls
+
+`MeshStack.setRole` gates origination, not relaying. Every role keeps gossiping — a phone
+that stops carrying other people's reports has left the mesh — but only NODE raises an SOS,
+senses, or heartbeats. A RELAY left in a stairwell should spend its battery carrying traffic;
+a GATEWAY is a responder's phone at the perimeter, not a casualty's.
+
+The role listener is invoked **outside** the stack's lock. It starts and stops real
+subsystems, and holding a lock across that is how a deadlock gets built; the test drives a
+listener that re-enters the stack to keep that honest.
+
+Leaving the GATEWAY role now stops the server. Previously the button was merely hidden and
+the board kept being served by a phone that was no longer the gateway.
+
+### Still not done on device
+
+- Microphone RMS: needs `RECORD_AUDIO` (not in the manifest) and an `AudioRecord` loop. Three
+  of the five sensory channels are audio, so this is the largest remaining sensing gap. Left
+  out until a device is available rather than guessed at.
+- The gateway's Wi-Fi hotspot cannot be opened programmatically without system permissions.
+  The responder opens it by hand; documented, not automated.
