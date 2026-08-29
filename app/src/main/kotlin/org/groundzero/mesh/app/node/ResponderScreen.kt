@@ -7,7 +7,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,20 +22,15 @@ import org.groundzero.mesh.app.mesh.MeshStack
  * The responder's phone at the perimeter. It serves the board; the responder reads it on a
  * laptop joined to this phone's hotspot.
  *
- * Leaving the responder role must actually stop the server, not merely hide the button — a
- * board still being served by a phone that is no longer the gateway is the kind of stale
- * truth this project is built to avoid. The [DisposableEffect] below is what enforces that.
+ * The server is deliberately **not** stopped when this screen leaves composition. Composition
+ * ends on a rotation or when the Activity is backgrounded, and a responder whose board dies
+ * because they put their phone in a pocket has lost the incident view mid-rescue. Stopping is
+ * tied to leaving the gateway *role* instead — see [NodeScreen].
  */
 @Composable
 fun ResponderScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var running by remember { mutableStateOf(GatewayController.isRunning) }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            if (GatewayController.isRunning) GatewayController.stop()
-        }
-    }
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(

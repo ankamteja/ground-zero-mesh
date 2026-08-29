@@ -72,6 +72,7 @@ Tick items in the same PR that does the work.
   - [ ] `[B]` gateway hotspot still cannot be opened programmatically without system permissions — responder opens it by hand
 - [ ] `[B]` Step 5 — 3-phone field test; per-API permission matrix on oldest + newest phone; record hardware in PR body
   - [x] `[B]` stand-in: `MeshFieldSimulationTest` — A—B—C over `SimNetwork`, SABDA at the gateway, store-and-forward replay after a partition
+  - [x] `[B]` demo kit: per-role screens (victim SOS / relay traffic log / responder server) + `MeshStack` activity log — see the runbook in `README.md`
   - [ ] `[B]` the real 3-phone run — still not done, and Nearby's discovery/permission path is untested by the stand-in
 
 ## Phase 5 — LoRa bridge  `[B]`

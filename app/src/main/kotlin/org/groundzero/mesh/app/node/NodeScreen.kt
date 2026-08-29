@@ -13,8 +13,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import org.groundzero.mesh.app.gateway.GatewayController
 import java.util.Locale
 
 /**
@@ -45,6 +47,14 @@ fun NodeScreen(vm: NodeViewModel, modifier: Modifier = Modifier) {
         )
 
         HorizontalDivider()
+
+        // Leaving the gateway role must actually stop serving, not just hide the control: a
+        // board still served by a phone that is no longer the gateway is exactly the stale
+        // truth this project exists to avoid. It lives here rather than in ResponderScreen
+        // because this composable survives the role change that removes that one.
+        LaunchedEffect(vm.role) {
+            if (vm.role != MeshRole.GATEWAY && GatewayController.isRunning) GatewayController.stop()
+        }
 
         when (vm.role) {
             MeshRole.NODE -> VictimScreen(vm)

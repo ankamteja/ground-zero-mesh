@@ -95,17 +95,16 @@ what makes the board's "relayed" reading true rather than decorative.
 3. Join that hotspot from the laptop and browse to `http://<responder-phone-ip>:8080/`.
 4. Press SOS on the victim phone.
 
-What to point at:
+What to point at, on the one dashboard page:
 
 - The relay's counters move — the report passed through a phone the responder cannot hear.
-- On **Ranked list**, the incident's evidence line reads `relayed`, not `first-hand`: the
+- In the **Board** list, the incident's evidence reads `relayed`, not `first-hand`: the
   gateway is holding testimony, and the first-hand gate says so.
-- On **Digital twin**, the relay appears as a carrier on the outer ring with a packet running
+- In the **3D view**, the relay appears as a carrier on the outer ring with a packet running
   the edge to the incident. A victim phone whose zone is still `unset` renders parked outside
-  the building and labelled `UNPLACED` rather than being drawn on the ground floor.
-
-Both dashboard views are the same URL and the same board — the twin is a way of reading the
-ranking, not a second source of truth.
+  the building and labelled `unplaced` rather than being drawn on the ground floor.
+- Tap a marker (or a board entry) to open the **Inspector** — the flag byte, the `v_SLM`
+  bars, and the reasons the incident ranks where it does.
 
 ## What's real vs. simulated right now
 
