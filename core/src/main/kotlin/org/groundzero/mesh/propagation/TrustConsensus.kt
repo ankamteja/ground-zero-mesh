@@ -7,9 +7,10 @@ package org.groundzero.mesh.propagation
  *
  * 1. `cooperative = localWeight x local + (1 - localWeight) x trust-weighted peer average`.
  *    A node keeps majority say over its own conclusion. It listens; it does not defer.
- * 2. Trust **decays faster than it builds** — [TRUST_GAIN] 0.02 against [TRUST_LOSS] 0.05.
- *    That asymmetry is the entire defence against a spoofed or faulty node: it must behave
- *    well for a long time to earn influence, and can lose it in a handful of bad reports.
+ * 2. Trust **decays far faster than it builds** — [TRUST_GAIN] 0.05 against [TRUST_LOSS]
+ *    0.35, a seven-to-one asymmetry. That is the entire defence against a spoofed or faulty
+ *    node: it must behave well for a long time to earn influence, and one contradicted
+ *    report costs it about seven reports' worth of standing.
  *
  * The asymmetry is exercised adversarially in `TrustConsensusTest` rather than assumed
  * correct because the constants were copied accurately. Copying a formula right and
@@ -88,10 +89,24 @@ class TrustConsensus(
         const val NEUTRAL_TRUST = 0.5
         const val DEFAULT_LOCAL_WEIGHT = 0.6
 
-        /** Ported verbatim. */
-        const val TRUST_GAIN = 0.02
+        /**
+         * Slow gain for a corroborated relay.
+         *
+         * Raised from the reference implementation's 0.02 because at 0.02 a node needed
+         * dozens of clean relays before its opinion counted for anything, which in a
+         * disaster that lasts twenty minutes means it never counts at all. Earning trust
+         * must be possible inside one incident.
+         */
+        const val TRUST_GAIN = 0.05
 
-        /** Ported verbatim, and deliberately larger than the gain. */
-        const val TRUST_LOSS = 0.05
+        /**
+         * Aggressive penalty for conflicting telemetry — seven times the gain.
+         *
+         * Raised from 0.05 for the reason the gain was raised: on the timescale of a real
+         * incident, a slow penalty means a node that contradicts first-hand observation keeps
+         * its influence for the whole event. The asymmetry is what makes a long con
+         * expensive; at one-to-one it would be free.
+         */
+        const val TRUST_LOSS = 0.35
     }
 }

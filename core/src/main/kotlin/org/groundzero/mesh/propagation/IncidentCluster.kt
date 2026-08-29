@@ -102,6 +102,18 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
             )
         }
 
+        if (existing != null && from != null && from != envelope.nodeId) {
+            // Grounds to judge: this peer relayed a claim about an incident we already hold,
+            // so its report can be checked against one. Agreement on severity is
+            // corroboration; disagreement is conflicting telemetry, and the asymmetric decay
+            // means the second costs about seven times what the first earns.
+            //
+            // The origin is never judged for its own report. Severity is the victim's own
+            // statement of how fast they die, and penalising the person in trouble for
+            // restating it would be exactly backwards.
+            judge(from, corroborated = envelope.severity == existing.severity)
+        }
+
         clusters[key] = merged
         return merged
     }
@@ -109,8 +121,10 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
     /**
      * Note that a peer's report agreed with, or contradicted, what we hold.
      *
-     * Kept separate from [ingest] so trust is only moved by a caller that actually has
-     * grounds to judge — a node cannot reward a peer merely for talking.
+     * [ingest] calls this itself, but only for a relay of an incident already held — a node
+     * cannot reward a peer merely for talking, and a first sighting corroborates nothing.
+     * Public because a layer with better grounds than severity agreement (a gateway
+     * comparing against a responder's confirmation, say) should be able to say so.
      */
     fun judge(peer: NodeId, corroborated: Boolean) {
         if (corroborated) trust.reinforce(peer) else trust.penalise(peer)
