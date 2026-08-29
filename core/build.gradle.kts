@@ -26,6 +26,18 @@ tasks.register<JavaExec>("runSim") {
     args = (project.findProperty("simArgs") as String?)?.split(" ") ?: emptyList()
 }
 
+/** This machine as a real relay node — see TcpRelayMain's doc. `-PrelayArgs="7778"` for a
+ *  non-default port. */
+tasks.register<JavaExec>("runRelay") {
+    group = "application"
+    description = "Run this machine as a LAN relay node phones can connect to instead of Nearby"
+    mainClass.set("org.groundzero.mesh.relay.TcpRelayMain")
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootProject.projectDir
+    standardInput = System.`in`
+    args = (project.findProperty("relayArgs") as String?)?.split(" ") ?: emptyList()
+}
+
 tasks.test {
     useJUnitPlatform()
     testLogging {

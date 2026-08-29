@@ -40,11 +40,11 @@ class NearbyTransport(
     context: Context,
     override val localId: NodeId,
     private val serviceId: String = DEFAULT_SERVICE_ID,
-) : Transport {
+) : RadioTransport {
 
     override val maxFrameBytes: Int = MAX_BYTES_PAYLOAD
 
-    val peers = PeerTable()
+    override val peers = PeerTable()
 
     private val appContext = context.applicationContext
     private val connections: ConnectionsClient = Nearby.getConnectionsClient(appContext)
@@ -111,7 +111,7 @@ class NearbyTransport(
      * comes back and needs what it missed, and nothing else in the stack knows when that
      * happened.
      */
-    fun onPeerConnected(listener: (NodeId) -> Unit) {
+    override fun onPeerConnected(listener: (NodeId) -> Unit) {
         this.peerConnected = listener
     }
 

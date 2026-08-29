@@ -928,3 +928,99 @@ one). A solid, low-alpha line runs from that marker to every incident's position
 from the dashed, packet-animated `link` lines that represent a relay's actual corroboration
 of another node's report. The two kinds of connection now read differently: "how this
 device's board sees the room" versus "who corroborated whom."
+
+---
+
+## A laptop as the relay, for when a real third phone is not available (2026-08-30)
+
+Requested directly: the hardware test session had a victim phone and a responder phone but
+no third device for the relay role the three-phone demo kit (Phase 14, above) is built
+around. Nearby Connections is BLE/Wi-Fi Direct — a laptop cannot join that radio as a peer,
+so "the laptop as relay" means a second, real transport, not a workaround inside Nearby.
+
+**Decided, confirmed with the user:** star topology over plain TCP, replacing Nearby for
+this test rather than running alongside it. Each phone connects only to the laptop, never
+to each other — the only way, without physically separating two phones by 15–30m, to
+guarantee there is exactly one path between victim and responder, which is the entire
+point of having a relay at all (see the three-phone demo's own "spacing is the demo, not
+staging" line). Running both transports live at once was considered and rejected: two
+transports feeding one `NodeAgent` risks duplicate/confusing frames for no benefit when
+there are only two phones.
+
+### `core`: a transport a JVM test can actually drive end to end
+
+BLE and LoRa cannot run in a JVM; TCP can. This is the one transport in the project with
+real automated coverage of the actual wire behaviour, not just simulated links.
+
+- **`TcpFraming`** — the wire framing a raw TCP stream needs and Nearby's `Payload`/a LoRa
+  packet already have for free: a 4-byte big-endian length prefix per frame. A sane upper
+  bound (1 MiB) guards against a corrupt length turning into an out-of-memory read, not a
+  real budget — `TcpTransport.maxFrameBytes` (below) is that.
+- **`TcpTransport`** — client role, one fixed relay address, matching
+  `NearbyTransport.MAX_BYTES_PAYLOAD`'s frame budget (so it gets the JSON codec too — this
+  is the same class of hop as Wi-Fi Direct, not LoRa). Reconnects on its own with a fixed
+  backoff, bounded connect timeout (an unbounded OS-default connect can run past a minute,
+  and plain `Thread.interrupt()` cannot unblock a blocking `Socket` constructor — using
+  `Socket().connect(address, timeoutMs)` instead avoids that). `knownPeers()` never holds
+  more than the one relay id — a star, not a mesh.
+- **`TcpRelayServer`** — the hub: accepts many connections, one thread per connection,
+  tracked by `NodeId` in a `ConcurrentHashMap`. `send(frame, to = null)` broadcasts to
+  every connection **including whichever one the frame arrived on** — deliberately, the
+  same "everyone reachable" semantics `NearbyTransport` already has. `Gossip`'s own
+  `propagationKey` dedup on the sender's side is what keeps that from becoming an echo
+  loop; this class does not need to know or care who sent what.
+- **Handshake**: `TcpTransport` writes its `NodeId` first, then reads the relay's;
+  `TcpRelayServer` reads first, then writes — a fixed pair of roles, so there is nothing to
+  negotiate and no way for both sides to block waiting on each other.
+- **`TcpRelayMain`** (`:core:runRelay`) — the runnable laptop program. Deliberately just
+  `Gossip` wired to a `TcpRelayServer`, no `NodeAgent`: a relay only ever carries, never
+  originates ("every role keeps relaying" — see `MeshStack.setRole`'s doc, app module), so
+  nothing here needs the agent. `Gossip` is documented as not thread-safe (see `MeshStack`'s
+  own doc on why it takes a lock); `TcpRelayServer` delivers each connection's frames on
+  that connection's own thread, concurrently, so `TcpRelayMain` takes the equivalent lock
+  itself around the one `Gossip` instance — the same shape `MeshStack` uses on a phone, just
+  without `MeshStack` itself, which is an app-module class. The relay's own `NodeId`
+  persists across restarts to a local `.relay-node-id` file, matching the app's own
+  `NodeIdStore` — an id that changes every run is one every dashboard "who carried this"
+  reading has to relearn.
+
+Tested (`core/src/test/.../TcpTransportTest.kt`, real sockets on `localhost`, ephemeral
+ports): handshake identity exchange both directions, frame delivery both directions,
+broadcast reaching every connected phone, the star property (two phones never see each
+other in `knownPeers`), reconnect when the client starts before the relay does, a dropped
+relay connection becoming visible to the client, oversized-frame rejection, and a second
+connection not disturbing the first. `./gradlew :core:test` is green.
+
+### `app`: the same interchangeable radio
+
+- **`RadioTransport`** (new interface) — the extra surface `MeshForegroundService` needs
+  beyond bare `Transport`: a `PeerTable` and an `onPeerConnected` signal. `NearbyTransport`
+  already had both; this just names the shape so a second implementation can stand in for
+  it without the service knowing which radio it is holding.
+- **`LanRelayTransport`** — wraps a `core` `TcpTransport`, adds `PeerTable` bookkeeping on
+  every received frame and every new connection. Deliberately thin: has no Android
+  dependency of its own, which is why its test (`app/.../LanRelayTransportTest.kt`) can
+  also run on real sockets rather than needing a device.
+- **`RelayHostStore`** — persisted host string, blank by default (real Nearby radio).
+  Mirrors `RoleStore`'s shape but is read once, at service `onCreate`, and changing it
+  needs an app restart — a full transport swap is a bigger change than a role flip and not
+  worth the complexity of tearing down and rebuilding the running mesh stack for a live
+  switch.
+- **`MainActivity`** — a "Laptop relay (optional)" field, visible before the Nearby
+  permission gate (since the host has to be set before the service ever starts), `host` or
+  `host:port`, defaulting the port to `RelayHostStore.DEFAULT_PORT` (`7777`) if omitted.
+- **`MeshForegroundService.buildRadio`** — the one branch point: blank host builds
+  `NearbyTransport` exactly as before; a non-blank host builds `LanRelayTransport` instead.
+  Everything downstream (`Gossip`, `GossipOriginTransport`, `MeshStack.install`, the
+  maintenance ticker's `decayTick`, store-and-forward replay on reconnect) already only
+  ever held the bare `RadioTransport`/`Transport` surface, so nothing else in the class
+  changed.
+
+### What's not verified
+
+Not run on real hardware — this environment has no Android SDK, so `:app` has never
+compiled here, let alone connected two real phones through a real laptop relay process.
+`core`'s socket code is genuinely tested end to end; the app-side wiring is reviewed by
+hand, not build- or device-verified. First real test: `./gradlew :core:runRelay` on the
+laptop, the "Laptop relay" field on both phones pointed at it, SOS from the victim, and
+the relay terminal's `relayed=` counter moving.

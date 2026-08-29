@@ -10,8 +10,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -22,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.groundzero.mesh.app.node.NodeScreen
 import org.groundzero.mesh.app.node.NodeViewModel
+import org.groundzero.mesh.app.node.RelayHostStore
 import org.groundzero.mesh.app.permissions.MeshPermissions
 import org.groundzero.mesh.app.service.MeshForegroundService
 
@@ -47,15 +51,38 @@ class MainActivity : ComponentActivity() {
                         if (granted) MeshForegroundService.start(this)
                     }
 
-                    if (!granted) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        // Reachable before the Nearby permission gate below, not after: the
+                        // service reads this once, in onCreate, so it must be set before the
+                        // service ever starts, not after the mesh screen is already showing.
+                        // Blank means the real radio — see RelayHostStore's own doc.
+                        var relayHost by remember { mutableStateOf(RelayHostStore.get(this@MainActivity)) }
+                        OutlinedTextField(
+                            value = relayHost,
+                            onValueChange = {
+                                relayHost = it
+                                RelayHostStore.set(this@MainActivity, it)
+                            },
+                            label = { Text("Laptop relay (optional)") },
+                            placeholder = { Text("blank = real Nearby radio") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            "host or host:port of a laptop running ./gradlew :core:runRelay — " +
+                                "changing this needs an app restart to take effect",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        HorizontalDivider()
+
+                        if (!granted) {
                             Text("Nearby permissions are required.")
                             Button(onClick = {
                                 requester.launch(MeshPermissions.runtimePermissions().toTypedArray())
                             }) { Text("Grant") }
+                        } else {
+                            NodeScreen(nodeViewModel)
                         }
-                    } else {
-                        NodeScreen(nodeViewModel)
                     }
                 }
             }

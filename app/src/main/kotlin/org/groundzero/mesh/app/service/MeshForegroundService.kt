@@ -16,13 +16,18 @@ import org.groundzero.mesh.agent.NodeAgent
 import org.groundzero.mesh.app.NodeIdStore
 import org.groundzero.mesh.app.mesh.MeshStack
 import org.groundzero.mesh.app.transport.GossipOriginTransport
+import org.groundzero.mesh.app.transport.LanRelayTransport
 import org.groundzero.mesh.app.transport.NearbyTransport
+import org.groundzero.mesh.app.transport.RadioTransport
 import org.groundzero.mesh.app.node.MeshRole
+import org.groundzero.mesh.app.node.RelayHostStore
 import org.groundzero.mesh.app.node.RoleStore
 import org.groundzero.mesh.app.sensors.GpsBridge
 import org.groundzero.mesh.app.sensors.SensorBridge
 import org.groundzero.mesh.app.transport.StoreAndForward
 import org.groundzero.mesh.propagation.Gossip
+import org.groundzero.mesh.propagation.NodeId
+import org.groundzero.mesh.transport.TcpTransport
 
 /**
  * Keeps the mesh alive with the screen off.
@@ -44,7 +49,7 @@ class MeshForegroundService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var wakeLock: PowerManager.WakeLock? = null
-    private var transport: NearbyTransport? = null
+    private var transport: RadioTransport? = null
     private var sensors: SensorBridge? = null
     private var gps: GpsBridge? = null
     val storeAndForward = StoreAndForward()
@@ -82,7 +87,7 @@ class MeshForegroundService : Service() {
             .apply { setReferenceCounted(false); acquire() }
 
         val localId = NodeIdStore.get(this)
-        val radio = NearbyTransport(this, localId)
+        val radio = buildRadio(localId)
         transport = radio
 
         val clock = { System.currentTimeMillis() }
@@ -118,13 +123,35 @@ class MeshForegroundService : Service() {
     }
 
     /**
+     * [NearbyTransport], or — when [RelayHostStore] holds a host — [LanRelayTransport]
+     * pointed at a laptop running `:core:runRelay` instead. The two are interchangeable
+     * from here down: everything else in this class only ever holds a [RadioTransport].
+     */
+    private fun buildRadio(localId: NodeId): RadioTransport {
+        val relayHost = RelayHostStore.get(this)
+        if (relayHost.isBlank()) return NearbyTransport(this, localId)
+        val (host, port) = parseRelayHost(relayHost)
+        Log.i(TAG, "LAN relay mode: connecting to $host:$port instead of Nearby")
+        return LanRelayTransport(TcpTransport(host, port, localId))
+    }
+
+    /** `host` or `host:port`; an unparseable or missing port falls back to
+     *  [RelayHostStore.DEFAULT_PORT] rather than refusing to start. */
+    private fun parseRelayHost(raw: String): Pair<String, Int> {
+        val colon = raw.lastIndexOf(':')
+        val port = if (colon >= 0) raw.substring(colon + 1).toIntOrNull() else null
+        return if (port == null) raw to RelayHostStore.DEFAULT_PORT
+        else raw.substring(0, colon) to port
+    }
+
+    /**
      * Hand a reconnected peer what it missed.
      *
      * The peer cannot ask for this: it does not know what it did not hear. The receiver's
      * gossip layer drops anything it already holds, so an over-generous replay costs one
      * frame per report rather than a flood.
      */
-    private fun replayTo(radio: NearbyTransport, peer: org.groundzero.mesh.propagation.NodeId) {
+    private fun replayTo(radio: RadioTransport, peer: NodeId) {
         val frames = MeshStack.bufferedFrames()
         if (frames.isEmpty()) return
         frames.forEach { runCatching { radio.send(it, peer) } }

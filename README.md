@@ -106,6 +106,31 @@ What to point at, on the one dashboard page:
 - Tap a marker (or a board entry) to open the **Inspector** — the flag byte, the `v_SLM`
   bars, and the reasons the incident ranks where it does.
 
+## Two phones and a laptop relay (no third phone)
+
+Nearby Connections is BLE/Wi-Fi Direct, so a laptop cannot join that radio as a peer. When
+a third phone for the relay role is not on hand, the laptop can carry frames instead of a
+phone, over a plain TCP connection on the same Wi-Fi hotspot each phone already joins for
+the dashboard — a genuinely different transport (`TcpTransport`/`TcpRelayServer` in `core`,
+`LanRelayTransport` in `app`), not a simulation. Star topology: each phone connects only to
+the laptop, never to each other, so there is still exactly one path between victim and
+responder, the same shape the physical 15–30m separation enforces in the three-phone demo.
+
+1. On the laptop: `./gradlew :core:runRelay` (port `7777` by default; `-PrelayArgs="7778"`
+   for another one). It prints its own IP-agnostic status; find the laptop's actual IP on
+   the shared Wi-Fi/hotspot network yourself (`ipconfig` / `ifconfig`).
+2. On each phone, before granting Nearby permissions: type the laptop's `host` or
+   `host:port` into the **Laptop relay** field on the first screen, then pick victim /
+   responder as usual (no relay role needed — the laptop is the relay). Leave it blank on
+   any phone that should keep using the real Nearby radio instead.
+3. This takes effect the next time the mesh service starts — kill and reopen the app after
+   setting it, rather than expecting a live switch.
+4. Press SOS on the victim phone. The laptop terminal prints `relayed=` counts moving,
+   the same signal the physical relay's counters give in the three-phone demo.
+
+Not yet run on real hardware — see `docs/architecture.md`'s LAN relay ledger entry for what
+is and is not verified.
+
 ## What's real vs. simulated right now
 
 Every layer above is implemented and unit-tested (`core` alone is 150+ tests). What has
