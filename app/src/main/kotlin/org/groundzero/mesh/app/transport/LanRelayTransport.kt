@@ -27,20 +27,33 @@ class LanRelayTransport(
 
     override val peers = PeerTable()
 
+    private var receiveListener: ((from: NodeId, frame: ByteArray) -> Unit)? = null
     private var peerConnectedListener: ((NodeId) -> Unit)? = null
 
-    override fun onReceive(listener: (from: NodeId, frame: ByteArray) -> Unit) {
+    // Registered once, unconditionally, here rather than inside onReceive/onPeerConnected
+    // below. TcpTransport.onReceive/onPeerConnected each hold a single overwriting slot, so
+    // wiring peers.sawInbound as a side effect of *those setters* — as this class used to —
+    // meant peer bookkeeping only happened if and when a caller registered its own listener,
+    // and only for events after that registration. `NearbyTransport` does not have this gap:
+    // its peer table is populated from its own SDK callbacks regardless of whether the app
+    // ever calls onReceive/onPeerConnected. This constructor now matches that — peers is
+    // always current, and a caller's listener is a separate, optional forward.
+    init {
         delegate.onReceive { from, frame ->
             peers.sawInbound(from, from.canonical())
-            listener(from, frame)
+            receiveListener?.invoke(from, frame)
         }
-    }
-
-    override fun onPeerConnected(listener: (NodeId) -> Unit) {
-        peerConnectedListener = listener
         delegate.onPeerConnected { peer ->
             peers.sawInbound(peer, peer.canonical())
             peerConnectedListener?.invoke(peer)
         }
+    }
+
+    override fun onReceive(listener: (from: NodeId, frame: ByteArray) -> Unit) {
+        receiveListener = listener
+    }
+
+    override fun onPeerConnected(listener: (NodeId) -> Unit) {
+        peerConnectedListener = listener
     }
 }

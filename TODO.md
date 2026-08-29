@@ -150,21 +150,31 @@ Tick items in the same PR that does the work.
       adding an explicit `self` marker (`MeshStack.localNodeId()` -> `GatewayServer.payload`)
       plus a distinct solid connection line from it to every incident, separate from the
       dashed relay-corroboration lines. See `docs/architecture.md`.
-- [ ] `[A]` **Laptop-as-relay, landed, not run on real hardware.** The hardware session had
-      only two phones (victim, responder), no third for the relay role. New: `core`'s
-      `TcpTransport`/`TcpRelayServer` (a real TCP transport, star topology, genuinely tested
-      end to end with real sockets — `TcpTransportTest`) and `:core:runRelay`
-      (`TcpRelayMain`, a runnable laptop program, no `NodeAgent` needed since a relay only
-      carries). `app`: `RadioTransport` interface, `LanRelayTransport` (thin wrapper,
-      Android-free, has its own real-socket test), `RelayHostStore`, a "Laptop relay" field
-      on `MainActivity`, `MeshForegroundService.buildRadio` branching on it. Confirmed with
-      the user: replace Nearby for this test, not run alongside it — a star topology is the
-      only way to guarantee one path between victim and responder without physically
-      separating two phones by 15–30m. See the LAN-relay ledger entry in
-      `docs/architecture.md`. **Not yet run on real hardware** — same limitation as the GPS
-      follow-up above: no Android SDK in this environment, so `:app` has never compiled
-      here. First real test: `./gradlew :core:runRelay`, point both phones' "Laptop relay"
-      field at it, press SOS, watch the relay terminal's `relayed=` counter move.
+- [ ] `[A]` **Laptop-as-relay, landed and now build-verified, still not run on real
+      hardware.** The hardware session had only two phones (victim, responder), no third
+      for the relay role. `core`: `TcpTransport`/`TcpRelayServer` (a real TCP transport,
+      star topology, genuinely tested end to end with real sockets — `TcpTransportTest`)
+      and `:core:runRelay` (`TcpRelayMain`, a runnable laptop program, no `NodeAgent`
+      needed since a relay only carries). `app`: `RadioTransport` interface,
+      `LanRelayTransport` (thin wrapper, Android-free, its own real-socket test),
+      `RelayHostStore`, a "Laptop relay" field on `MainActivity`,
+      `MeshForegroundService.buildRadio` branching on it. Confirmed with the user: replace
+      Nearby for this test, not run alongside it — a star topology is the only way to
+      guarantee one path between victim and responder without physically separating two
+      phones by 15–30m. **Now compiled and tested for the first time** (this session got
+      an Android SDK): `LanRelayTransportTest` was written against `kotlin.test`, which
+      only `core` carries — `:app` only has JUnit4 — so it failed to compile until rewritten
+      to match every other app test's convention. That surfaced a real bug underneath:
+      `LanRelayTransport`'s peer-table bookkeeping only happened as a side effect of the
+      *caller* registering `onReceive`/`onPeerConnected`, unlike `NearbyTransport`, which
+      populates its own peer table unconditionally from its SDK callbacks. Dormant in the
+      one production call site (`MeshForegroundService` always registers both before
+      `start()`), but a real "wired but consumer-order-dependent" gap — fixed by moving the
+      registration into `LanRelayTransport`'s own `init`. See the ledger entry in
+      `docs/architecture.md`. `./gradlew test` (both modules) and `:app:assembleDebug` are
+      green. **Still not run on real hardware** — first real test: `./gradlew
+      :core:runRelay`, point both phones' "Laptop relay" field at it, press SOS, watch the
+      relay terminal's `relayed=` counter move.
 
 ## Open assumptions (name them in the deck and in UI copy)
 

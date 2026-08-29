@@ -4,12 +4,13 @@ import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.propagation.PeerLiveness
 import org.groundzero.mesh.transport.TcpRelayServer
 import org.groundzero.mesh.transport.TcpTransport
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
 import java.net.ServerSocket
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import kotlin.test.AfterTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
 
 /**
  * [LanRelayTransport] has no Android dependency of its own — it is a thin wrapper around
@@ -27,7 +28,7 @@ class LanRelayTransportTest {
 
     private fun freePort(): Int = ServerSocket(0).use { it.localPort }
 
-    @AfterTest
+    @After
     fun tearDown() {
         teardowns.forEach { runCatching { it() } }
         teardowns.clear()
@@ -39,7 +40,7 @@ class LanRelayTransportTest {
             if (check()) return
             Thread.sleep(10)
         }
-        assert(check()) { message }
+        assertTrue(message, check())
     }
 
     @Test
@@ -69,7 +70,7 @@ class LanRelayTransportTest {
         lan.onPeerConnected { peer -> seen = peer; connected.countDown() }
         lan.start()
 
-        assert(connected.await(2, TimeUnit.SECONDS)) { "onPeerConnected never fired" }
+        assertTrue("onPeerConnected never fired", connected.await(2, TimeUnit.SECONDS))
         assertEquals(relayId, seen)
     }
 
@@ -86,7 +87,7 @@ class LanRelayTransportTest {
         lan.onReceive { _, _ -> received.countDown() }
         srv.send("hello".toByteArray(), to = a)
 
-        assert(received.await(2, TimeUnit.SECONDS)) { "frame never arrived" }
+        assertTrue("frame never arrived", received.await(2, TimeUnit.SECONDS))
         assertEquals(PeerLiveness.ALIVE, lan.peers.liveness(relayId))
     }
 }

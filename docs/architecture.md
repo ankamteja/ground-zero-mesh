@@ -1016,11 +1016,36 @@ connection not disturbing the first. `./gradlew :core:test` is green.
   ever held the bare `RadioTransport`/`Transport` surface, so nothing else in the class
   changed.
 
-### What's not verified
+### It compiled once a real Android SDK ran it — two real bugs found, both closed (2026-08-30)
 
-Not run on real hardware — this environment has no Android SDK, so `:app` has never
-compiled here, let alone connected two real phones through a real laptop relay process.
-`core`'s socket code is genuinely tested end to end; the app-side wiring is reviewed by
-hand, not build- or device-verified. First real test: `./gradlew :core:runRelay` on the
-laptop, the "Laptop relay" field on both phones pointed at it, SOS from the victim, and
-the relay terminal's `relayed=` counter moving.
+First `:app` build of this feature (this environment now has the SDK): `LanRelayTransportTest`
+failed to compile at all — written against `kotlin.test`'s `Test`/`AfterTest`/`assertEquals`,
+which only `core`'s Gradle module carries; `:app` has only JUnit4 (`org.junit`), the
+convention every other test in the module already uses. Rewritten to match: `@After`,
+`org.junit.Test`, `assertEquals`/`assertTrue`.
+
+Fixing the compile error surfaced a second, real one underneath: two of the three tests then
+failed at runtime, `peers.known()` never seeing the relay. `LanRelayTransport` had been
+wiring `peers.sawInbound` as a side effect *inside* `onReceive`/`onPeerConnected` — the
+methods a caller registers a listener through — so peer bookkeeping only happened if and
+when the app called those methods, and only for events after that registration. Contrast
+`NearbyTransport`, which populates its own `peers` from its underlying SDK's callbacks
+directly, unconditionally, regardless of whether the app ever calls `onReceive`/
+`onPeerConnected` at all. `MeshForegroundService` happens to always register both before
+`start()`, so this was dormant in the one production call site, but it is exactly the kind
+of implicit, consumer-order-dependent wiring the audit at the top of this document exists to
+catch — the next caller that constructs this class differently would silently get a stale
+peer table. Fixed by moving the `TcpTransport` registration into `LanRelayTransport`'s own
+`init` block, unconditional and one-time; the class's own `onReceive`/`onPeerConnected` now
+just store an optional forward-to listener, never touching `delegate` again after
+construction.
+
+`./gradlew test` (both modules) and `:app:assembleDebug` are green.
+
+### What's still not verified
+
+Not run on real hardware. Both modules now compile and their unit tests pass, including
+`LanRelayTransportTest`'s real-socket cases — but that is still a JVM test harness, not two
+physical phones and a laptop on the same Wi-Fi network. First real test: `./gradlew
+:core:runRelay` on the laptop, the "Laptop relay" field on both phones pointed at it, SOS
+from the victim, and the relay terminal's `relayed=` counter moving.
