@@ -82,7 +82,20 @@ Tick items in the same PR that does the work.
 - [ ] `[B]` Step 5 — 3-phone field test; per-API permission matrix on oldest + newest phone; record hardware in PR body
   - [x] `[B]` stand-in: `MeshFieldSimulationTest` — A—B—C over `SimNetwork`, SABDA at the gateway, store-and-forward replay after a partition
   - [x] `[B]` demo kit: per-role screens (victim SOS / relay traffic log / responder server) + `MeshStack` activity log — see the runbook in `README.md`
-  - [ ] `[B]` the real 3-phone run — still not done, and Nearby's discovery/permission path is untested by the stand-in
+  - [x] `[B]` closer stand-in (2026-08-30): `tools/field/` boots virtual phones over Android's
+        `netsim` — a real Bluetooth protocol stack in software (Rootcanal), so the app talks to
+        the genuine Nearby Connections API and permission model, unlike `MeshFieldSimulationTest`
+        which drives `SimNetwork` directly. An SOS raised on a virtual victim (real
+        `VictimScreen` → `NodeViewModel` → `raiseSos`, tapped via `uiautomator`, not a synthetic
+        call) crossed a laptop TCP relay and appeared on a **real physical phone's** board at
+        `hops=2`. Runbook: `docs/running_actual_emulation.md`. Found and fixed three real bugs
+        this session's other stand-ins did not reach: `NetworkOnMainThreadException` crashing the
+        app on the relay send path, the last queued frame silently dropped on service stop, three
+        unplaced casualty ids overlapping into one unreadable label on the board.
+  - [ ] `[B]` the real 3-phone run over actual Nearby (BLE / Wi-Fi Direct hardware discovery) —
+        still not done. `netsim` is virtual radio: it proves every layer of the app is correct
+        against the real Android APIs, but not real antennas, real interference, or the runtime
+        permission dialogs a person actually taps through on physical silicon.
 
 ## Phase 5 — LoRa bridge  `[B]`
 

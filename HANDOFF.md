@@ -1,8 +1,9 @@
 # Handoff — where things stand (2026-08-30, night)
 
 Written fresh, replacing the earlier version — everything it tracked is now either landed or
-superseded below. `main` is at `b3a9d36`. `./gradlew test` (**378 tests**, core 304 / app 74)
-and `:app:assembleDebug` are both green. For how to run any of this, see `docs/RUNNING.md`.
+superseded below. `main` is at `ebb0649` (merges in `worktree-field-emulation`, built in
+parallel this session — see below). `./gradlew test` (**378 tests**, core 304 / app 74) and
+`:app:assembleDebug` are both green. For how to run any of this, see `docs/RUNNING.md`.
 
 The **Samsung S25 / SM_S931B** ran the current build as the responder throughout this session.
 No victim phone was on hand for the second half — the Realme's contribution (a real incident,
@@ -43,6 +44,15 @@ No victim phone was on hand for the second half — the Realme's contribution (a
 - **A zone entered after the SOS now reaches the board.** This was the cause of every real run
   showing `unset` forever: the first envelope's zone was frozen because `DedupCluster`'s merge
   never updated it. Now follows the same "informative wins" rule as the GPS fix.
+- **Real Nearby Connections, without physical phones.** `tools/field/` (built on a parallel
+  worktree this session, merged in) drives virtual phones over Android's `netsim` — a real
+  Bluetooth protocol stack in software, not a mock — so the app runs against the genuine
+  Nearby API and permission model. Verified: two virtual phones find each other over real BLE
+  GATT and an `ENCRYPTED_WIFI_LAN` endpoint; an SOS raised on a virtual victim crossed the
+  laptop TCP relay and landed on a **real physical phone's** board at `hops=2`. Found and fixed
+  three real bugs: a crash on the relay send path (`NetworkOnMainThreadException`), the last
+  queued frame silently dropped on service stop, and three unplaced casualty ids overlapping
+  into one unreadable board label. See `docs/RUNNING.md` §7½ and `tools/field/README.md`.
 - **Structural audio reaches the board as evidence, not just a number.** Bit 7 was reserved
   and unused while the channel it should have named was already the third-heaviest weight in
   the danger score. Now `structural crack`.
@@ -81,9 +91,11 @@ version:
 
 ## Open items, unchanged or newly surfaced
 
-- **The actual 3-phone (or 2-phone-plus-laptop) field run** — everything above is build- and
-  unit-verified; a live multi-device run with a real GPS fix and the laptop relay over a real
-  network hasn't happened yet.
+- **The actual run over real physical Nearby (BLE / Wi-Fi Direct hardware)** — `tools/field`
+  proves the app against the genuine Nearby API and permission model with virtual radios; it
+  does not prove real antennas, real interference, or the permission dialogs a person taps
+  through on physical silicon. A live multi-device run with a real GPS fix and the laptop
+  relay over a real network still hasn't happened.
 - **Gateway hotspot still can't be opened programmatically** — a responder opens it by hand
   (Android permission limitation, not a bug).
 - **`Envelope.peers` is populated and never read.** Up to 48 bytes per frame — over 20% of the

@@ -209,6 +209,36 @@ testimony), because anything past a relay is downgraded by design.
 
 ---
 
+## 7½. Real Nearby, no physical phones — the netsim field harness
+
+`§5` needs two phones in a room. `tools/field/` gets the same real Nearby Connections
+discovery and permission path with **zero physical phones**, using the virtual Bluetooth
+stack (`netsimd`) the Android emulator already ships — a real BLE protocol implementation
+in software, not a mock. This is a different kind of proof than `§1`'s `SimNetwork`: the app
+talks to the genuine Nearby API, on genuine Android, and can crash the way it would crash on
+real hardware. It found three real bugs a logic-level test could not reach.
+
+```bash
+cd tools/field
+./setup.sh                                          # once: venv + generated netsim gRPC stubs
+./field.sh up 2                                      # two headless phones, one radio scene
+./field.sh install                                   # push app-debug.apk to both
+./configure.sh emulator-5554 NODE 10.0.2.2:7802      # role + relay host, via run-as — no tapping
+./sos.sh emulator-5554 drowning                      # raises a real SOS through VictimScreen -> raiseSos
+./field.sh down
+```
+
+Full instructions, status, and what is and isn't proven by it: `tools/field/README.md` and
+`docs/running_actual_emulation.md`.
+
+**Worked if:** Play services logs a `NearbyConnections` endpoint over `ENCRYPTED_WIFI_LAN`
+between the two virtual devices, and an SOS raised on one appears on the other's board.
+
+> This proves the app against real Android APIs, not real antennas. §5's actual two-device
+> run over physical BLE/Wi-Fi Direct is still the thing nothing else replaces.
+
+---
+
 ## 8. Tests
 
 ```bash
