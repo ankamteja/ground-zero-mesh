@@ -93,11 +93,32 @@ cmd_board() {
   # The gateway binds its socket well after the Activity is up — service start, role
   # restore, then NanoHTTPD. 15s was not enough on a cold launch and reported a working
   # board as dead.
+  # The forward is re-asserted every attempt, not just once up front. On these handsets the
+  # USB link re-enumerates and silently drops every forward while `adb devices` still lists
+  # the phone (docs/RUNNING.md §5) — polling a tunnel that quietly died is how this reported
+  # a perfectly healthy board as dead.
+  # Re-added only when it is actually missing. Re-issuing `adb forward` on a spec that
+  # already exists tears the tunnel down and rebuilds it, so asserting it every pass meant
+  # every poll hit a socket that had just been reset — the same shape as docs/RUNNING.md §5's
+  # keep-alive loop, which also tests before it re-adds.
   for _ in $(seq 1 40); do
-    curl -sf -o /dev/null --max-time 3 "http://localhost:$BOARD_PORT/snapshot" && break || sleep 1
+    "$ADB" -s "$serial" forward --list 2>/dev/null | grep -q "tcp:$BOARD_PORT" \
+      || "$ADB" -s "$serial" forward tcp:$BOARD_PORT tcp:8080 >/dev/null 2>&1
+    curl -sf --max-time 3 "http://localhost:$BOARD_PORT/snapshot" >/dev/null 2>&1 && break || sleep 1
   done
-  curl -sf -o /dev/null --max-time 4 "http://localhost:$BOARD_PORT/snapshot" \
-    || die "  board not answering — is $serial the GATEWAY, and did it start serving?"
+  if ! curl -sf --max-time 4 "http://localhost:$BOARD_PORT/snapshot" >/dev/null 2>&1; then
+    say "  board not answering. Checking why:" >&2
+    if ! "$ADB" -s "$serial" shell pidof $PKG >/dev/null 2>&1; then
+      die "    the app is not running on $serial — ./demo.sh setup $serial GATEWAY"
+    fi
+    local serving
+    serving=$("$ADB" -s "$serial" shell "run-as $PKG cat $PREFS" 2>/dev/null \
+      | grep -o 'gateway_serving" value="[a-z]*' | sed 's/.*"//')
+    [ "$serving" = "true" ] \
+      && die "    it is serving but unreachable — the USB forward is not holding." \
+      || die "    the board server is stopped (gateway_serving=$serving). Someone tapped
+    'Stop responder server' on the phone. Fix: ./demo.sh setup $serial GATEWAY"
+  fi
   say "  board: http://localhost:$BOARD_PORT/"
 }
 
