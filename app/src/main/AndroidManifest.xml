@@ -48,10 +48,28 @@
     -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+      Optional, exactly like ACCESS_FINE_LOCATION above: the microphone enriches an SOS but is
+      never required to send one (see permissions/MeshPermissions.kt's MICROPHONE_PERMISSION
+      and sensors/AudioBridge.kt). Declining it leaves three of the sixteen feature slots at
+      zero and changes nothing else.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <!-- Scanning must survive screen-off -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission
         android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"
+        tools:targetApi="upside_down_cake" />
+    <!--
+      14+ (API 34): a foreground service that touches the microphone must hold the matching
+      typed permission as well as declaring the type below. Since Android 11 the type is also
+      what permits recording at all while the app is not in front — without it AudioRecord
+      returns silence rather than an error, which is the same silent-failure shape as a missing
+      Nearby permission.
+    -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"
         tools:targetApi="upside_down_cake" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
@@ -73,7 +91,7 @@
         <service
             android:name=".service.MeshForegroundService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|microphone" />
 
     </application>
 </manifest>

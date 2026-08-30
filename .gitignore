@@ -19,4 +19,10 @@ docs/planning/
 *.local.md
 
 # TcpRelayMain's persisted node id — machine-local, one per laptop that runs the relay
-.relay-node-id
+.relay-node-id*
+
+# Emulation / demo scratch and the Vercel build output
+.emulation/
+.dashboard-demo/
+web/dist/
+.vercel

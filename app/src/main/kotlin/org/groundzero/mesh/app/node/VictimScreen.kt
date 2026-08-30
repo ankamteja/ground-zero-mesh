@@ -103,6 +103,28 @@ fun VictimScreen(vm: NodeViewModel, modifier: Modifier = Modifier) {
             }
         }
 
+        // Optional for the same reason as the GPS grant above, and requested the same way.
+        // Without it the three audio feature slots stay zero; the SOS is unaffected.
+        var micGranted by remember { mutableStateOf(MeshPermissions.microphoneGranted(context)) }
+        val micRequester = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { grantedNow ->
+            micGranted = grantedNow
+            if (grantedNow) MeshForegroundService.start(context)
+        }
+        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
+            Text(
+                if (micGranted) "Microphone: on — water, voices and impacts are added as evidence"
+                else "Microphone: off — the SOS still sends, with no sound evidence",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (!micGranted) {
+                TextButton(onClick = { micRequester.launch(MeshPermissions.MICROPHONE_PERMISSION) }) {
+                    Text("Add mic")
+                }
+            }
+        }
+
         HorizontalDivider()
 
         var showDetails by remember { mutableStateOf(false) }

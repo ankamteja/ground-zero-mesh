@@ -124,6 +124,16 @@ class TcpRelayServer(
             log("handshake failed: ${e.message}")
             runCatching { socket.close() }
             return
+        } catch (e: IllegalArgumentException) {
+            // A frame that arrives structurally intact but says something impossible — a
+            // corrupt length prefix (TcpFraming's bounds check) or a NodeId that is not three
+            // hex groups (NodeId.parse). Both are `require` failures, not IOExceptions, so
+            // without this they unwind out of the connection thread: the socket is never
+            // closed and nothing is ever logged. A relay must not be silently deafened by one
+            // bad client, on a demo night least of all.
+            log("handshake rejected: ${e.message}")
+            runCatching { socket.close() }
+            return
         }
 
         val connection = Connection(socket, output)

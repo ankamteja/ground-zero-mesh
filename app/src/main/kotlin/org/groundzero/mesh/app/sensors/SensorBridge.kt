@@ -8,13 +8,15 @@ import android.hardware.SensorManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import org.groundzero.mesh.agent.AudioObservation
 import org.groundzero.mesh.agent.NodeAgent
 import org.groundzero.mesh.agent.SensoryWindow
 import org.groundzero.mesh.agent.SlmFeatureVector
 import org.groundzero.mesh.app.mesh.MeshStack
 
 /**
- * L1's eyes and ears on the device: accelerometer and ambient light into the agent.
+ * L1's eyes and ears on the device: accelerometer, ambient light and microphone into the
+ * agent.
  *
  * Without this the danger score only moves when someone presses the button, which makes the
  * whole sensing half of the design decorative. With it a phone that is dropped, buried or
@@ -29,12 +31,14 @@ import org.groundzero.mesh.app.mesh.MeshStack
  * for four seconds of a thirty-second window was underwater, and averaging that away is how a
  * casualty gets scored as calm.
  *
- * ### What is missing
+ * ### Where the audio comes from
  *
- * Microphone RMS. It needs `RECORD_AUDIO`, which is not in the manifest, plus an
- * `AudioRecord` loop — and the audio channels are three of the five sensory slots. Left out
- * until a real device is available to check it against; until then the audio slots stay zero
- * and the board says less than it could rather than making something up.
+ * [audio] is pulled, not pushed: [AudioBridge] keeps its own analysis current on its own
+ * thread and this tick reads whatever is latest. That keeps a single writer to the agent and
+ * means a stalled microphone costs a stale reading rather than a stalled sensing loop. The
+ * default supplier reports [AudioObservation.SILENT] forever, which is exactly what a phone
+ * with no microphone permission should contribute: nothing, rather than a fabricated zero
+ * dressed up as a measurement.
  *
  * Sensors are read on the main looper via [Handler], matching the rest of the app's
  * threading, and `MeshStack` serialises the agent calls anyway.
@@ -42,6 +46,7 @@ import org.groundzero.mesh.app.mesh.MeshStack
 class SensorBridge(
     context: Context,
     private val handler: Handler = Handler(Looper.getMainLooper()),
+    private val audio: () -> AudioObservation = { AudioObservation.SILENT },
 ) : SensorEventListener {
 
     private val sensors =
@@ -112,8 +117,12 @@ class SensorBridge(
 
     private fun read(): Reading {
         val magnitude = SensorNormalisation.magnitude(lastX, lastY, lastZ)
+        val heard = audio()
         return Reading(
             window = SensoryWindow(
+                audioWater = heard.water,
+                audioVoice = heard.voice,
+                audioStructural = heard.structural,
                 imuShock = SensorNormalisation.shock(magnitude),
                 imuPinned = SensorNormalisation.pinned(lastX, lastY, lastZ),
                 // No light sensor means no claim about darkness: 0.5 is the neutral the

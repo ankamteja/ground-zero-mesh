@@ -54,4 +54,21 @@ object MeshPermissions {
 
     fun locationGranted(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, LOCATION_PERMISSION) == PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Optional for the same reason as [LOCATION_PERMISSION], and kept out of
+     * [runtimePermissions] for the same reason: the microphone enriches an SOS, it does not
+     * enable one. A victim who declines it still reaches the mesh with severity, danger score,
+     * IMU evidence and hop distance intact — three of the sixteen feature slots simply stay
+     * zero, which `AudioBridge` reports honestly as silence rather than as a measurement of
+     * nothing. Folding it into [runtimePermissions] would make a microphone grant a
+     * precondition for calling for help.
+     *
+     * See `sensors/AudioBridge.kt` for the consumer and `agent/AudioFeatures.kt` (core) for
+     * what is actually computed from it.
+     */
+    const val MICROPHONE_PERMISSION = Manifest.permission.RECORD_AUDIO
+
+    fun microphoneGranted(context: Context): Boolean =
+        ContextCompat.checkSelfPermission(context, MICROPHONE_PERMISSION) == PackageManager.PERMISSION_GRANTED
 }

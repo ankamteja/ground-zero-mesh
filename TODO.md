@@ -67,7 +67,15 @@ Tick items in the same PR that does the work.
   - [x] `[B]` SOS button reaches the agent; the screen says when a press did *not* reach the wire
   - [ ] `[B]` `NodeAgent.livenessTick` still not driven (`PeerTable.decayTick` covers peer decay) — see `docs/architecture.md`
 - [x] `[B]` Step 3 — `SensorBridge`: accel / light -> `senseVector`; window peaks -> `completeSensoryWindow`
-  - [ ] `[B]` microphone RMS still missing — needs `RECORD_AUDIO` + an `AudioRecord` loop and a device to verify against
+  - [x] `[B]` microphone landed (2026-08-30) — `core`'s `AudioFeatures` (hand-rolled radix-2
+        FFT, spectral flatness, crest factor -> water / voice / structural, 19 tests against
+        synthetic signals) plus `app`'s `AudioBridge` (`AudioRecord` at 16 kHz, pull-model),
+        `RECORD_AUDIO` + `FOREGROUND_SERVICE_MICROPHONE` + `foregroundServiceType=
+        "connectedDevice|microphone"`, an optional grant on `VictimScreen`. Went in as
+        spectral features, not RMS: a single loudness scalar cannot separate rushing water
+        from a shout from a crack, and those are three different tokens on a responder's
+        board. **`core` is tested and green; the `app` half has never compiled here** — no
+        Android SDK in this environment, same limitation as the GPS and LAN-relay landings.
 - [x] `[B]` Step 4 — role switch controls what runs (Gateway server / Node agent+sensors / Relay gossip-only)
   - [ ] `[B]` gateway hotspot still cannot be opened programmatically without system permissions — responder opens it by hand
 - [ ] `[B]` Step 5 — 3-phone field test; per-API permission matrix on oldest + newest phone; record hardware in PR body
@@ -175,6 +183,19 @@ Tick items in the same PR that does the work.
       green. **Still not run on real hardware** — first real test: `./gradlew
       :core:runRelay`, point both phones' "Laptop relay" field at it, press SOS, watch the
       relay terminal's `relayed=` counter move.
+
+## Multi-node relay chain (2026-08-30)
+
+- [x] `[A]` `CompositeTransport` + `TcpRelayMain --link host:port` — a relay can now serve its
+      own port *and* dial the next relay, so several chained relays give genuine multi-hop
+      instead of a two-hop star. Relay id file keyed by port (several relays on one machine are
+      several nodes). Verified two ways: `RelayChainTest` (7 tests, real sockets — hop counts,
+      TTL exhaustion mid-chain, ring echo suppression, composite fan-out/id/budget rules), and
+      three real JVM relay processes on `7801 <- 7802 <- 7803` driven by an external Python
+      client, delivering `hops=4 ttl=5` with each relay forwarding exactly once.
+- [ ] `[B]` run the chain with real phones: victim -> laptop relay A -> laptop relay B ->
+      responder. Two phones is now enough for a multi-hop board reading; no third device and no
+      emulator needed.
 
 ## Open assumptions (name them in the deck and in UI copy)
 
