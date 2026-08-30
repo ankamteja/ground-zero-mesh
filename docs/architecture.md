@@ -1234,3 +1234,65 @@ by. Each relay forwarded exactly once and each upstream relay suppressed exactly
 A genuine multi-hop board reading no longer needs three phones or an emulator. Two phones and
 a laptop running two chained relays produce a responder board showing `4 hops`, `SABDA`, and
 relayed corroboration — which is the evidence the dashboard was built to display.
+
+---
+
+## GPS on a real phone: the fix was never the code path, it was the service type (2026-08-30)
+
+The GPS-on-SOS feature landed complete and unit-tested, and then did nothing on a real
+handset. Nothing in the pipeline was wrong: `GpsBridge` registered its listener,
+`MeshStack.updateGpsFix` passed through, `NodeAgent.lastGpsFix` was read onto the envelope,
+and `CompactCodec` carried it. No fix ever arrived to travel through any of it.
+
+**The cause was `AndroidManifest.xml`, not Kotlin.** `MeshForegroundService` declared
+`android:foregroundServiceType="connectedDevice|microphone"`. Since Android 10 an app only
+receives location while it is "in use", and a foreground service counts as in-use for
+location *only if its type includes `location`*. This service exists specifically to keep the
+mesh alive with the screen off — so the moment the app stopped being the front app, which is
+the entire scenario, the platform stopped delivering fixes. Silently: no exception, no log,
+no permission denial. Exactly the failure shape the manifest's own Nearby comment warns about
+one block higher up.
+
+This is the same rule the microphone comment already documents for `RECORD_AUDIO`. It was
+written for the microphone and not generalised to GPS, which is why the gap survived review —
+the note was three lines above the bug it described.
+
+### Why the type is computed at runtime rather than just declared
+
+Adding `location` to the manifest is necessary but not sufficient, and doing only that would
+have traded a silent failure for a loud one. On Android 14+, `startForeground` with a
+`location` or `microphone` type whose runtime permission is **not** granted throws
+`SecurityException` and kills the service. Both permissions are optional here by design — a
+declined grant must cost that one feature and nothing else, never the mesh. So
+`enterForeground()` builds the type mask from what is actually granted: `connectedDevice`
+always, `microphone` and `location` only when held. Below 14 the two-argument call keeps
+using the manifest union, which is safe there because no permission is enforced at promotion
+time.
+
+`onStartCommand` now re-promotes before starting the bridges. It was already the retry point
+for a permission granted after the service came up, but restarting the bridge alone was not
+enough: on 14+ the type mask is what gates delivery, and the mask was fixed at `onCreate`
+when the permission was still missing. Re-calling `startForeground` is the documented way to
+widen it.
+
+### Two smaller reasons a fix could still not arrive
+
+- `GpsBridge.start()` returned early when the GPS provider was switched off, leaving
+  `running` false with nothing to set it true again — the only retry path fires on a
+  permission grant, not on someone enabling Location in Settings. It now registers
+  regardless; a registration against a disabled provider is legal and begins delivering when
+  the provider comes up.
+- Nothing seeded from `getLastKnownLocation`, so the earliest possible coordinate was one
+  full GPS time-to-first-fix after the service started — tens of seconds cold, longer
+  indoors, reliably later than the SOS. `seedFromLastKnownFix()` now takes the platform's
+  existing fix if it is under `MAX_SEED_AGE_MS` (two minutes) old. This does not weaken the
+  "never a fallback or an estimate" rule: it is `GPS_PROVIDER` only, so it is a real
+  satellite fix, and the age bound is what keeps it a claim about where the phone *is*
+  rather than where it was.
+
+### What did not change
+
+The honesty contract. `raiseSos` is still synchronous and still never waits on GPS, the
+field is still nullable, the zone tag and `minHops` are still the proxy for anyone without a
+fix, and there is still no network-location fallback anywhere.
+
