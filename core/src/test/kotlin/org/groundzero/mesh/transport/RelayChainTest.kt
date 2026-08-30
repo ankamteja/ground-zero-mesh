@@ -289,6 +289,31 @@ class RelayChainTest {
     }
 
     @Test
+    fun `a garbage client cannot deafen the relay`() {
+        // Reported from the field: a probe with a bad length prefix silently killed the
+        // connection thread, because TcpFraming's bounds check and NodeId.parse both throw
+        // IllegalArgumentException, which the handshake's IOException catch did not cover.
+        val port = freePort()
+        val relay = Relay(NodeId(0xA1), port)
+        relay.start()
+
+        java.net.Socket("127.0.0.1", port).use { bad ->
+            val out = java.io.DataOutputStream(bad.getOutputStream())
+            out.writeInt(0x7FFF_FFFF)          // a length no frame could ever have
+            out.write("nonsense".toByteArray())
+            out.flush()
+            Thread.sleep(150)
+        }
+
+        // The relay must still take a real client afterwards.
+        val good = client(victim, port).also { it.start() }
+        awaitTrue("relay still accepts connections after a garbage one") {
+            relay.server.knownPeers().contains(victim)
+        }
+        assertTrue(good.knownPeers().isNotEmpty(), "the good client completed its handshake")
+    }
+
+    @Test
     fun `the composite refuses members that disagree about who they are`() {
         // Two members with different NodeIds would mean one process advertising two identities
         // on the mesh — corroboration counting and the peer table both quietly break.
