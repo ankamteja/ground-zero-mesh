@@ -1049,3 +1049,120 @@ Not run on real hardware. Both modules now compile and their unit tests pass, in
 physical phones and a laptop on the same Wi-Fi network. First real test: `./gradlew
 :core:runRelay` on the laptop, the "Laptop relay" field on both phones pointed at it, SOS
 from the victim, and the relay terminal's `relayed=` counter moving.
+
+---
+
+## The microphone: the perception layer's missing 45% (2026-08-30)
+
+Audited the L1 spec against the tree and found the decision layer complete and faithful —
+`MathEngine.project` is `W·v_SLM + w_IMU·a_mag` exactly, the EMA and thresholds are in
+`DangerScore`, the flag byte and its `0x8f` rendering are in `SensoryFlags`, and the Stage 0
+/ Stage 3 cascade with its reused `dedupKey` all hold. The *perception* layer did not.
+
+`SensoryWindow.audioWater`, `audioVoice` and `audioStructural` had no writer anywhere in the
+app. Nothing was broken — every one of them was simply always `0.0`. That is 0.45 of
+`MathEngine.DEFAULT_WEIGHTS`' total mass and three of the five evidence bits in the flag
+byte, permanently unreachable. A phone submerged next to someone screaming scored exactly
+what it scores in a silent drawer.
+
+### `core`: spectral features, not RMS
+
+The old TODO said "microphone RMS". RMS was the wrong target: one loudness scalar cannot
+separate rushing water from a shout from a structural crack, and those are three different
+tokens in front of a responder. `AudioFeatures` reads three *shapes* instead, from one
+short buffer:
+
+- **water** — loud, noise-like (high spectral flatness), energy above the voice band, and
+  sustained rather than struck.
+- **voice** — loud, tonal (low flatness), energy concentrated in 300–3400 Hz. A scream is the
+  loud end of this shape, not a separate one.
+- **structural** — a sharp transient: high crest factor over a broadband spectrum.
+
+Supporting machinery, all hand-rolled because `core` carries no dependencies at all — which
+is exactly what keeps it a plain JVM module the Android side merely borrows: an iterative
+radix-2 Cooley–Tukey FFT, a Hann window (without it the buffer-edge discontinuity leaks
+broadband energy into every bin, which reads as high flatness — that is, as water), Wiener
+entropy computed in the log domain (the product of a few thousand small powers underflows a
+`Double` long before it finishes), and peak-to-RMS crest factor.
+
+**The one asymmetry worth recording.** Every channel is gated on RMS loudness except
+`structural`, which is gated on *peak*. Found by a failing test, not by inspection: a click
+three milliseconds long inside a 256 ms buffer has an RMS barely above the noise floor
+however violent it was, so the first version scored a genuine impact at 0.04 and would have
+lost every structural crack in the system. An impact is measured by its peak; only the
+sustained channels are honestly measured by their average. `transience` is what keeps steady
+noise out of that channel, so the peak can be trusted to mean what it says.
+
+`TRANSIENT_FLOOR` sits above *speech's* crest factor (3–5) rather than above noise's, because
+the failure that matters is reporting a person talking as a collapsing building.
+
+Tested (`core/src/test/.../AudioFeaturesTest.kt`, 19 tests, no device): a tone lands in its
+own FFT bin; noise reads flat and a tone does not; a click out-crests steady noise; each of
+the three shapes fires on its own signal *and does not fire on the other two*; a 6 kHz tone
+is not reported as speech; silence, a below-floor whisper, an empty buffer and a too-short
+buffer all assert nothing rather than crashing; every output stays inside the `0..1`
+`SensoryWindow` requires, checked by constructing one; and `analyse` does not mutate the
+caller's buffer, which the bridge reuses for the life of the recording loop. Two further
+tests pin the point of the whole exercise: that a water reading reaches the flag byte *and*
+the wire summary, and that the audio slots actually move the projected signal.
+
+A classifier that answered "water" to everything would have passed a one-signal suite and put
+"rising water" — the most urgent token this system has — on every board in the mesh. Hence
+the negative assertions in every shape test.
+
+Honest about what it is: a heuristic spectral classifier, not a trained model and not the
+frozen encoder trunk the L1 design describes. It cannot tell rushing water from heavy rain,
+or a scream from a shout. It is evidence, which is all any channel here claims to be —
+`SensorySummary` fuses by max precisely because every channel is near-blind somewhere.
+
+### `app`: a bridge shaped like the GPS one
+
+- **`AudioBridge`** — `AudioRecord`, 16 kHz mono PCM16 (Nyquist puts the 8 kHz top of the
+  analysable range exactly at the limit, and every Android device supports the rate).
+  Deliberately `MediaRecorder.AudioSource.MIC`, never `VOICE_RECOGNITION` or
+  `VOICE_COMMUNICATION`: those apply noise suppression and AGC tuned to keep speech and
+  discard everything else, which is precisely the broadband hiss and the transient this
+  channel exists to hear.
+- **Pull, not push.** The bridge keeps `latest` current on its own thread; `SensorBridge`
+  reads it on the existing 1.5 s tick. One writer to the agent instead of two racing ones,
+  and a stalled microphone costs a stale reading rather than a stalled sensing loop.
+- **Raw audio never leaves the object.** One buffer, allocated once, overwritten in place,
+  never copied. What escapes is three `0..1` confidences. There is no file, no upload path,
+  and nothing that could become one without a deliberate change — which is what makes an
+  always-listening microphone defensible in a phone people are asked to carry through a
+  disaster. Same rule `SensoryChannel` states for the wire, applied one layer earlier.
+- **Optional, like GPS.** `MICROPHONE_PERMISSION` is kept out of
+  `MeshPermissions.runtimePermissions()` for the reason `LOCATION_PERMISSION` is: the
+  microphone enriches an SOS, it does not enable one. Declining it leaves three slots at zero
+  and changes nothing else. `VictimScreen` carries its own grant row, and
+  `onStartCommand` re-runs `AudioBridge.start()` after a late grant exactly as it already
+  does for `GpsBridge`.
+- **The foreground-service detail that would have failed silently.** Recording from a
+  background service needs `foregroundServiceType="connectedDevice|microphone"` (Android 11+)
+  and `FOREGROUND_SERVICE_MICROPHONE` (API 34+). Without them `AudioRecord` returns silence
+  rather than an error — the same shape of silent failure as a missing Nearby permission, and
+  the one this project has already been bitten by twice.
+
+**Verification status.** `core` is tested and green. The `app` half was written in an
+environment with no Android SDK, so it was unbuilt here; the SDK box has since reported
+`:app:assembleDebug` passing, which makes it compiled-but-not-device-run — no phone has yet
+held the microphone open through a real SOS. The `AudioRecord` calls and the
+foreground-service microphone type are still correct-by-inspection only.
+
+### Still not built, and deliberately not faked
+
+The spec's actual SLM encoder — a quantised frozen trunk stopped at the bottleneck layer —
+does **not** exist. `SlmFeatureVector.from(window)` is a hand-written linear mapping from the
+sensory window into the 16 slots, and `SensoryClassifier` is the seam a real model was always
+meant to drop into. Adding a model needs an artifact, a runtime dependency and a decision
+about which of the two seams it implements; none of that can be invented here. The four
+reserved vector slots and the existing seam are what keep that a drop-in rather than a
+rewrite.
+
+Camera frames are likewise absent. The light sensor already carries the enclosure signal the
+camera would mostly duplicate, and camera access from a background service is a much larger
+lift than its marginal evidence justifies.
+
+`DangerScore.DEFAULT_ALPHA` is **0.35**; the L1 spec says 0.15. Left as it stands rather than
+silently changed — 0.35 is documented in that class as a deliberate divergence, and the two
+differ only in rise time, not in where the EMA settles.
