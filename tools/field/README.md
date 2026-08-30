@@ -18,26 +18,66 @@ while the mesh is running.
 Nothing here patches Android, the emulator, or any module of this repo. It is a
 launcher plus a client for an API the emulator already exposes.
 
-## Status on this machine — read before using
+## Status — what is actually proven
 
-**The emulator half does not currently run here.** `qemu-system-x86_64` segfaults
-about 24 seconds into every boot, at the same stage each time. Ruled out, one at
-a time: emulator 36.3.10 and 37.1.11, system images API 35 and API 36, GPU modes
-`auto` / `swiftshader_indirect` / `guest`, Vulkan on and off, headless and
-windowed, bundled and system libs, cameras on and off, KVM and `-no-accel`
-(which only moved the crash from 24s to 102s — the same point in a slower boot),
-and adb contact during boot. A `NVRM: ... Out of memory [NV_ERR_NO_MEMORY]`
-appears in the kernel log around the same time, so the host GPU driver is the
-best remaining suspect; a reboot is the cheapest next thing to try.
+**Two virtual phones run the app and find each other over Nearby.** Verified on
+this machine: `field.sh up 2` boots two emulators sharing one `netsimd`, the
+debug APK installs on both, `MeshForegroundService` runs on each, and Google
+Play services logs
 
-So `field.sh` and `netsimctl.py` are written and syntax-checked but **not
-verified against a booted emulator**. `netsimctl.py` does talk real gRPC to a
-`netsimd` (verified — it connects and gets a typed response), but a standalone
-`netsimd` answers `UNIMPLEMENTED`: it forces `no_cli_ui` on and the `netsim` CLI
-binary is not in the SDK package, so the frontend service only registers when
-the daemon is started by an emulator. That path could not be reached.
+```
+NearbyMediums: Successfully bound ServerSocket for service org.groundzero.mesh_UPGRADE
+NearbyConnections: EndpointManager received a KEEP_ALIVE frame (seqNum:6) with ACK
+                   from endpoint JWRI on channel ENCRYPTED_WIFI_LAN
+```
 
-**The responder half does work, and is verified end-to-end.** See below.
+— our service id, our two nodes, a live connection carrying acked keep-alives,
+plus BLE GATT advertisements with a matching service-id hash on both sides. So
+**Nearby Connections does work between emulators**, which was the one assumption
+this whole approach rested on. The AVD must be a Google Play image (`field_api35`
+here is `google_apis_playstore`); install with `-g` so runtime permissions are
+pre-granted.
+
+### `-gpu host` is mandatory on an SELinux host — do not "fix" it back
+
+SwiftShader JIT-compiles shaders onto the heap and executes them. An enforcing
+SELinux host denies that:
+
+```
+AVC avc: denied { execheap } for comm="RenderThread" ... permissive=0
+```
+
+and the emulator segfaults ~24s into every boot. This is not subtle to diagnose
+from the outside — the log just stops. Ruled out first, one at a time: emulator
+36.3.10 and 37.1.11, API 35 and API 36 images, Vulkan on/off, headless and
+windowed, bundled and system libs, cameras on/off, KVM and `-no-accel`. The
+backtrace is what named it: the faulting frame is inside
+`emulator/lib64/gles_swiftshader/libGLESv2.so`, calling into JIT-generated code.
+
+Rendering on the real GPU never loads that JIT. The alternative,
+`setsebool -P selinuxuser_execheap on`, loosens policy for every unconfined
+process on the machine and is the worse trade.
+
+### Live position control is *not* available from the SDK
+
+`netsimctl.py` speaks correct gRPC — right method paths, real typed responses —
+but every `FrontendService` call returns `UNIMPLEMENTED`, whether the daemon is
+standalone, in `--dev` mode, or spawned by an emulator (which advertises its port
+in `/run/user/$UID/netsim.ini`). The SDK ships a stripped `netsimd`: `no_cli_ui`
+and `no_web_ui` are both hardcoded on, and the `netsim` CLI binary is absent.
+The control plane is compiled out. Using it needs a `netsimd` built from AOSP.
+
+What *is* available for distance today:
+
+- `adb emu geo fix <lon> <lat>` — real GPS per phone, accepted (returns `OK`).
+  Everything in the app that reasons about location responds to this.
+- `emulator -netsim-args "--rssi=ble:-90"` — per-emulator signal strength, set at
+  launch (documented for 36.5+; not exercised here).
+
+`netsimctl.py` is kept because it is correct against the published protos and
+starts working the moment a full `netsimd` is on the path.
+
+**The responder half is verified end-to-end too.** See below.
 
 ## Use
 
@@ -83,7 +123,7 @@ On a 16 GB laptop, close the browser first or run two.
 
 | Layer | Covered here | Notes |
 |---|---|---|
-| `NearbyTransport` (L0) | **unverified** | needs Play services; see the caveat below |
+| `NearbyTransport` (L0) | **yes, verified** | two emulators connected over `ENCRYPTED_WIFI_LAN` |
 | `MeshForegroundService` | yes | real Android service, real process death |
 | Permission matrix | yes | real per-API-level runtime grants |
 | `NodeScreen` / Compose UI | yes | real device, real lifecycle |
@@ -92,18 +132,15 @@ On a 16 GB laptop, close the browser first or run two.
 | `GatewayServer` + dashboard | yes | `adb forward tcp:8080 tcp:8080` |
 | `LoRaBridgeTransport` | no | use Meshtasticator instead, below |
 
-### The caveat that decides whether this is worth it
+### The question that used to decide whether this was worth it
 
-Nearby Connections is a Play services API. The AVD must be a Google Play system
-image, and whether GMS Nearby completes a connection *between two emulators* is
-not documented either way — Google documents virtual Bluetooth between emulators
-(netsim) and, from emulator 36.5, a shared virtual Wi-Fi network with NSD and
-Wi-Fi Direct, but says nothing about Nearby on top of that.
+Whether GMS Nearby completes a connection *between two emulators* is documented
+nowhere: Google documents virtual Bluetooth between emulators (netsim) and, from
+36.5, a shared virtual Wi-Fi network with NSD and Wi-Fi Direct, but says nothing
+about Nearby on top of that. It was the reason to test before building.
 
-Test that first, before building anything on this harness. Everything else in
-the table degrades gracefully: `LanRelayTransport` already gives a working
-transport that does not touch Nearby, so a field run stays useful even if Nearby
-turns out to need real hardware.
+It does work — see the log excerpt at the top. Answered, on this machine, with
+this AVD.
 
 The emulator here was upgraded 36.3.10 → 37.1.11 for this, well past the 36.5
 that added the shared virtual Wi-Fi network and `-netsim-args --rssi`. An

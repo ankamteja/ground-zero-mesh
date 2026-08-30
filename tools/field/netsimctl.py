@@ -102,7 +102,41 @@ def discover_port() -> int:
     sys.exit(f"several netsimd frontends listening ({sorted(ports)}); set NETSIM_GRPC_PORT")
 
 
+# Set by stub(), so guard() can name the port it failed against.
+PORT = 0
+
+STRIPPED_DAEMON = """\
+netsimd on localhost:{port} answered UNIMPLEMENTED for FrontendService.
+
+That daemon is the stripped build shipped inside the Android SDK: it serves the
+emulators (netsim.packet.PacketStreamer) but has the control plane compiled out
+-- `no_cli_ui` and `no_web_ui` are both hardcoded on, and the `netsim` CLI binary
+is not in the package. Standalone, `--dev`, and emulator-spawned daemons all
+behave this way, so there is nothing to configure here.
+
+Positions need a netsimd built from AOSP (platform/tools/netsim). Until then:
+  adb emu geo fix <lon> <lat>                  real GPS, per phone
+  emulator -netsim-args "--rssi=ble:-90"       signal strength, set at launch
+"""
+
+
+def guard(call, *args):
+    """Run one frontend RPC, turning the SDK daemon's UNIMPLEMENTED into advice.
+
+    Every call here hits the same wall on an SDK netsimd, and a raw grpc
+    traceback says nothing about why. See STRIPPED_DAEMON.
+    """
+    try:
+        return call(*args)
+    except grpc.RpcError as exc:
+        if exc.code() is grpc.StatusCode.UNIMPLEMENTED:
+            sys.exit(STRIPPED_DAEMON.format(port=PORT))
+        sys.exit(f"netsim rpc failed: {exc.code().name}")
+
+
 def stub(port: int):
+    global PORT
+    PORT = port
     channel = grpc.insecure_channel(f"localhost:{port}")
     try:
         grpc.channel_ready_future(channel).result(timeout=5)
@@ -114,7 +148,7 @@ def stub(port: int):
 # --- operations ---------------------------------------------------------------
 
 def devices(fe):
-    return fe.ListDevice(empty_pb2.Empty()).devices
+    return guard(fe.ListDevice, empty_pb2.Empty()).devices
 
 
 def resolve(fe, name: str):
@@ -132,13 +166,14 @@ def resolve(fe, name: str):
 
 def place(fe, name: str, x: float, y: float, z: float = 0.0) -> None:
     device = resolve(fe, name)
-    fe.PatchDevice(
+    guard(
+        fe.PatchDevice,
         frontend_pb2.PatchDeviceRequest(
             id=device.id,
             device=frontend_pb2.PatchDeviceRequest.PatchDeviceFields(
                 position=model_pb2.Position(x=x, y=y, z=z),
             ),
-        )
+        ),
     )
 
 
@@ -243,7 +278,7 @@ def main() -> None:
     if args.cmd == "list":
         show(fe)
     elif args.cmd == "reset":
-        fe.Reset(empty_pb2.Empty())
+        guard(fe.Reset, empty_pb2.Empty())
         print("netsim reset")
     elif args.cmd == "place":
         place(fe, args.device, args.x, args.y, args.z)

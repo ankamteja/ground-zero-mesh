@@ -6,10 +6,16 @@
 # one scene rather than N isolated machines. netsimctl.py then places them and
 # walks them around; see README.md for what that does and does not prove.
 #
-#   ./field.sh up 3          boot three phones (headless)
+#   ./field.sh up 2          boot two phones (headless)
 #   ./field.sh status        adb + netsim view of the field
 #   ./field.sh install       install the debug APK on every booted phone
+#   ./field.sh geo <serial> <lon> <lat>   move one phone (real GPS)
 #   ./field.sh down          stop them
+#
+# The AVD must be a Google Play system image, or Nearby has no Play services to
+# run on. Two phones on this 16 GB laptop is the comfortable limit -- each costs
+# about 2.8 GB of host RSS at the default 1536 MB of guest RAM, and a third gets
+# the others OOM-killed mid-boot.
 #
 # One AVD serves every instance: `-read-only` lets several emulators share one
 # AVD image (each gets its own overlay), so there is no need to clone a 7 GB AVD
@@ -23,8 +29,10 @@ sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
 emulator="$sdk/emulator/emulator"
 adb="$sdk/platform-tools/adb"
 avd="${FIELD_AVD:-}"
-# Deliberately small. Three phones at the emulator's 2048 MB default do not fit
-# on a 16 GB laptop that is also running a Gradle daemon and a browser.
+# -gpu host needs a display to render against, even headless.
+export DISPLAY="${DISPLAY:-:0}"
+# Guest RAM. Measured cost on the host is roughly 2.8 GB per phone at this
+# setting, so two fit on a 16 GB laptop and three do not.
 mem="${FIELD_MEM_MB:-1536}"
 run="$here/.run"
 
@@ -60,11 +68,17 @@ up() {
         # -camera-back/front none: without them the emulator loads its virtual
         #   camera scene (a 3D mesh, Toren1BD.obj) and does GPU work no headless
         #   field run has any use for.
-        # -gpu swiftshader_indirect: software rendering; a field of phones must
-        #   not contend for one host GPU.
+        # -gpu host, and NOT swiftshader: SwiftShader JIT-compiles shaders onto
+        #   the heap and executes them, which SELinux denies (`execheap` AVC on
+        #   the RenderThread) on an enforcing host like Fedora -- the emulator
+        #   then segfaults ~24s into boot, every time. Rendering on the real GPU
+        #   never loads that JIT. If you must use SwiftShader on such a host,
+        #   the alternative is `setsebool -P selinuxuser_execheap on`, which
+        #   loosens the policy for every unconfined process and is a worse
+        #   trade than simply using the GPU that is already there.
         setsid "$emulator" -avd "$avd" -read-only -port "$port" \
             -no-window -no-audio -no-boot-anim \
-            -gpu swiftshader_indirect \
+            -gpu host \
             -camera-back none -camera-front none \
             -no-snapshot-load -no-snapshot-save \
             -memory "$mem" -cores 2 \
@@ -104,6 +118,18 @@ install_apk() {
     done
 }
 
+# Real GPS, injected per phone through the emulator console. Until a netsimd with
+# a control plane is on the path (see README), this is the distance knob that
+# actually works: everything in the app that reasons about where a node is --
+# zones, incident location, the responder board's map -- follows it.
+geo() {
+    local serial="${1:?usage: field.sh geo <serial> <lon> <lat>}"
+    local lon="${2:?usage: field.sh geo <serial> <lon> <lat>}"
+    local lat="${3:?usage: field.sh geo <serial> <lon> <lat>}"
+    "$adb" -s "$serial" emu geo fix "$lon" "$lat"
+    echo "field: $serial at lon=$lon lat=$lat"
+}
+
 down() {
     local serial
     for serial in $("$adb" devices | awk '/^emulator-/ {print $1}'); do
@@ -117,6 +143,7 @@ case "${1:-}" in
     up)      shift; up "$@" ;;
     down)    down ;;
     status)  status ;;
+    geo)     shift; geo "$@" ;;
     install) install_apk ;;
-    *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    *) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
