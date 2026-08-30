@@ -26,3 +26,6 @@ docs/planning/
 .dashboard-demo/
 web/dist/
 .vercel
+
+# Claude Code worktrees — a full nested checkout per worktree, never meant to be committed.
+.claude/
