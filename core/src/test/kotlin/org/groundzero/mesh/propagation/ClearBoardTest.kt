@@ -52,7 +52,7 @@ class ClearBoardTest {
         dedup.ingest(envelope(), from = null, nowMs = 1_000)
         assertEquals(1, dedup.clusters().size)
 
-        dedup.clear()
+        dedup.clear(nowMs = 1_000)
         assertTrue(dedup.clusters().isEmpty(), "the board should be empty right after a clear")
     }
 
@@ -61,7 +61,7 @@ class ClearBoardTest {
         val dedup = DedupCluster()
         val sos = envelope()
         dedup.ingest(sos, from = null, nowMs = 1_000)
-        dedup.clear()
+        dedup.clear(nowMs = 1_000)
 
         // Exactly what StoreAndForward hands a reconnecting peer, and what a still-open
         // incident keeps heartbeating: the same envelope, arriving again.
@@ -77,7 +77,7 @@ class ClearBoardTest {
     fun `corroboration of a cleared incident does not resurrect it`() {
         val dedup = DedupCluster()
         dedup.ingest(envelope(), from = null, nowMs = 1_000)
-        dedup.clear()
+        dedup.clear(nowMs = 1_000)
 
         // The duplicate path in Gossip.ingest: a second copy by another carrier. It is
         // corroboration for an incident still held, and nothing at all for a cleared one.
@@ -88,10 +88,32 @@ class ClearBoardTest {
     }
 
     @Test
+    fun `a victim still broadcasting after the quiet window comes back`() {
+        // The whole point of the window expiring. A responder clearing their screen must not
+        // permanently silence someone still trapped and still calling — and because a second
+        // SOS press reuses the incident's timestamp by design, the re-press carries the
+        // cleared key and would otherwise have vanished for good.
+        val dedup = DedupCluster()
+        val sos = envelope()
+        dedup.ingest(sos, from = null, nowMs = 1_000)
+        dedup.clear(nowMs = 1_000)
+
+        dedup.ingest(sos, from = relay, nowMs = 1_000 + DedupCluster.SUPPRESSION_MS)
+        assertTrue(dedup.clusters().isEmpty(), "should still be quiet at the window edge")
+
+        dedup.ingest(sos, from = relay, nowMs = 1_000 + DedupCluster.SUPPRESSION_MS + 1)
+        assertEquals(
+            1,
+            dedup.clusters().size,
+            "a victim still broadcasting past the window must reach the board again",
+        )
+    }
+
+    @Test
     fun `a genuinely new incident still reaches a cleared board`() {
         val dedup = DedupCluster()
         dedup.ingest(envelope(), from = null, nowMs = 1_000)
-        dedup.clear()
+        dedup.clear(nowMs = 1_000)
 
         // A new press after the incident was cleared mints a new `nodeId@timestamp`, which
         // is what makes it a different incident rather than an update to the old one.
@@ -108,7 +130,7 @@ class ClearBoardTest {
     fun `a different victim is unaffected by another's incident being cleared`() {
         val dedup = DedupCluster()
         dedup.ingest(envelope(), from = null, nowMs = 1_000)
-        dedup.clear()
+        dedup.clear(nowMs = 1_000)
 
         dedup.ingest(envelope(from = other), from = relay, nowMs = 2_000)
 

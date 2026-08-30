@@ -100,7 +100,7 @@ class Gossip(
      * incidents themselves is [DedupCluster]'s job; see its `cleared` set.
      */
     fun clearBoard() {
-        clusters.clear()
+        clusters.clear(clockMs())
     }
 
     fun dedup(): DedupCluster = clusters

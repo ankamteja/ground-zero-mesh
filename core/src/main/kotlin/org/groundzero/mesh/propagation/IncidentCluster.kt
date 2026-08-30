@@ -81,7 +81,8 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
     private val clusters = LinkedHashMap<String, IncidentCluster>()
 
     /**
-     * Incidents a responder has explicitly cleared off the board, by [Envelope.dedupKey].
+     * Incidents a responder has explicitly cleared, by [Envelope.dedupKey], each with the
+     * moment it was cleared.
      *
      * Clearing the map alone does not hold: the mesh is still full of those frames. A peer
      * reconnecting replays its [org.groundzero.mesh.app.transport.StoreAndForward] buffer,
@@ -90,21 +91,41 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
      * copy by another route is corroboration. So a cleared board repopulated itself within
      * seconds and looked like the clear button had done nothing.
      *
-     * Keyed on incident identity rather than a timestamp cutoff so that this survives clock
-     * skew between phones, which on a mesh of unsynchronised handsets is the normal case.
-     * A genuinely new incident mints a new `nodeId@timestamp` and is unaffected.
+     * **Why this expires.** The first version of this refused a cleared incident forever,
+     * which is wrong in the one direction that matters: a person who is still trapped and
+     * still broadcasting would never reach the board again, because the responder tidied
+     * their screen once. Clearing is an acknowledgement, not a block on a human being. It
+     * also broke the obvious demo — a victim pressing SOS a second time reuses the
+     * incident's timestamp by design (see [org.groundzero.mesh.agent.NodeAgent.raiseSos]),
+     * so the re-press carried the cleared key and vanished.
+     *
+     * [SUPPRESSION_MS] is therefore short: long enough to swallow the echo burst that
+     * follows a clear, far too short to hide anyone who is still calling.
+     *
+     * Keyed on incident identity rather than a timestamp cutoff on the envelope, because the
+     * phones' clocks are not synchronised; the expiry below uses the *receiver's* clock,
+     * which is the only one this node can trust.
      */
-    private val cleared = LinkedHashSet<String>()
+    private val cleared = LinkedHashMap<String, Long>()
 
     /**
-     * Drop every incident currently on the board and refuse those same incidents if they
-     * arrive again. See [cleared] for why refusing is part of clearing rather than a
-     * separate concern.
+     * Drop every incident currently on the board, and refuse those same incidents for the
+     * next [SUPPRESSION_MS]. See [cleared] for why the refusal is part of clearing, and why
+     * it expires rather than lasting forever.
      */
-    fun clear() {
-        cleared.addAll(clusters.keys)
-        while (cleared.size > CLEARED_CAPACITY) cleared.remove(cleared.first())
+    fun clear(nowMs: Long = System.currentTimeMillis()) {
+        clusters.keys.forEach { cleared[it] = nowMs }
+        while (cleared.size > CLEARED_CAPACITY) cleared.remove(cleared.keys.first())
         clusters.clear()
+    }
+
+    /** True while [key] is still inside its post-clear quiet window. */
+    private fun suppressed(key: String, nowMs: Long): Boolean {
+        val clearedAt = cleared[key] ?: return false
+        if (nowMs - clearedAt <= SUPPRESSION_MS) return true
+        // Expired: forget it, so a still-broadcasting victim is treated as news again.
+        cleared.remove(key)
+        return false
     }
 
     /**
@@ -117,9 +138,9 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
      */
     fun ingest(envelope: Envelope, from: NodeId?, nowMs: Long): IncidentCluster {
         val key = envelope.dedupKey
-        // A responder cleared this one. Replays and continued heartbeats of it are exactly
-        // what [cleared] exists to absorb, so it must not come back onto the board.
-        if (key in cleared) {
+        // A responder cleared this one moments ago. The echo that follows a clear is exactly
+        // what [cleared] exists to absorb — but only briefly; see [suppressed].
+        if (suppressed(key, nowMs)) {
             return IncidentCluster(
                 key = key,
                 origin = envelope.nodeId,
@@ -288,5 +309,14 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
          * incident could reappear if it is still circulating, which is the cheaper failure.
          */
         const val CLEARED_CAPACITY = 512
+
+        /**
+         * How long a cleared incident stays refused.
+         *
+         * Sized to the echo, not to the incident: the replay burst that follows a clear
+         * arrives within a second or two. Anything still broadcasting after this window is
+         * treated as news again, because it probably is.
+         */
+        const val SUPPRESSION_MS = 15_000L
     }
 }
