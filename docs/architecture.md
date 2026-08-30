@@ -1166,3 +1166,71 @@ lift than its marginal evidence justifies.
 `DangerScore.DEFAULT_ALPHA` is **0.35**; the L1 spec says 0.15. Left as it stands rather than
 silently changed — 0.35 is documented in that class as a deliberate divergence, and the two
 differ only in rise time, not in where the EMA settles.
+
+---
+
+## Multi-node relay: a chain, not just a star (2026-08-30)
+
+The LAN relay landed as a **star** — `TcpRelayServer` accepts connections, `TcpTransport`
+makes one, and a process holding either alone is an endpoint. Every node it can reach is one
+hop away and there is nowhere further to pass a frame, so a lone hub caps the mesh at two
+hops. That is fine for standing in for one missing phone and useless for demonstrating the
+thing the hop count exists to describe.
+
+A relay in the *middle* of a chain has to do both jobs: accept the phones near it and dial
+the next relay along.
+
+- **`CompositeTransport`** — one `Transport` fanning over several. Broadcast goes to every
+  member; a targeted send goes to the one member that knows the peer, and an unroutable `to`
+  is **dropped rather than broadcast** (quietly widening a targeted send is how a
+  store-and-forward replay meant for one reconnecting peer becomes a re-flood of the mesh).
+  `maxFrameBytes` is the **minimum** across members, never the maximum: the codec is chosen
+  from that number, so taking the widest would encode frames the narrowest member physically
+  cannot carry, failing at transmit time on whichever link is the long-haul radio. Members
+  must share a `NodeId` — two identities from one process breaks corroboration counting and
+  the peer table alike, so it is a constructor `require`.
+- **`TcpRelayMain --link host:port`** — dials another relay in addition to serving its own
+  port. No `--link` is exactly the old behaviour, and a lone server is *not* wrapped in a
+  composite, because a layer that fans out over one member is a layer for nothing.
+- **The relay id file is now keyed by port** (`.relay-node-id-<port>`). Several relays
+  chained on one machine are several nodes; sharing one id file would have given them one
+  `NodeId`. A pre-existing legacy `.relay-node-id` is adopted by the default port so an
+  established relay keeps the identity a board already knows.
+
+Loop suppression needed no new code. `TcpRelayServer` already echoes to the connection a
+frame arrived on, and `Gossip`'s `propagationKey` already kills the echo at the first relay
+that holds it — so a ring is safe, which `RelayChainTest` pins directly rather than leaving
+as a claim.
+
+### Verified, on real sockets and as real processes
+
+`RelayChainTest` (7 tests, real sockets, ephemeral ports): a two-relay chain delivering with
+a hop per link and `SABDA` at the far end while the origin's own `PRATYAKSA` claim survives;
+a three-relay chain reaching `hops = 4`; TTL exhausting mid-chain so a report dies where its
+reach ends rather than crossing everything plugged in; a ring where each relay forwards
+exactly once and the echo is provably suppressed; and the composite's own fan-out, id
+agreement and narrowest-budget rules.
+
+Then run for real — three separate JVMs, `7801 <- 7802 <- 7803`, each with its own `Gossip`
+and its own persisted id, driven by a Python client speaking `TcpFraming` and the `JsonCodec`
+shape directly so nothing in the loop shared an implementation with what it was testing:
+
+```
+[victim]    >>> pressing SOS (hops=0, ttl=8)
+[responder] <<< SOS from 0000-0000-0011  hops=4  ttl=5  severity=STRUCTURAL_ENTRAPMENT
+relay A: peers=1 relayed=1 duplicates=1
+relay B: peers=2 relayed=1 duplicates=1
+relay C: peers=1 relayed=1 duplicates=0
+```
+
+`hops = 4` for `victim -> A -> B -> C -> responder`, and `ttl = 5` because **TTL counts
+forwards, not links** — the victim's own transmission spends none, so three relays cost
+three. That off-by-one was already pinned over `SimNetwork` in `MeshPropagationTest`; it is
+re-pinned here over real sockets because it is the number a TTL chosen in the field is judged
+by. Each relay forwarded exactly once and each upstream relay suppressed exactly one echo.
+
+### What this changes for the demo
+
+A genuine multi-hop board reading no longer needs three phones or an emulator. Two phones and
+a laptop running two chained relays produce a responder board showing `4 hops`, `SABDA`, and
+relayed corroboration — which is the evidence the dashboard was built to display.

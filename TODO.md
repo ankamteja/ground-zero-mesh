@@ -184,6 +184,19 @@ Tick items in the same PR that does the work.
       :core:runRelay`, point both phones' "Laptop relay" field at it, press SOS, watch the
       relay terminal's `relayed=` counter move.
 
+## Multi-node relay chain (2026-08-30)
+
+- [x] `[A]` `CompositeTransport` + `TcpRelayMain --link host:port` — a relay can now serve its
+      own port *and* dial the next relay, so several chained relays give genuine multi-hop
+      instead of a two-hop star. Relay id file keyed by port (several relays on one machine are
+      several nodes). Verified two ways: `RelayChainTest` (7 tests, real sockets — hop counts,
+      TTL exhaustion mid-chain, ring echo suppression, composite fan-out/id/budget rules), and
+      three real JVM relay processes on `7801 <- 7802 <- 7803` driven by an external Python
+      client, delivering `hops=4 ttl=5` with each relay forwarding exactly once.
+- [ ] `[B]` run the chain with real phones: victim -> laptop relay A -> laptop relay B ->
+      responder. Two phones is now enough for a multi-hop board reading; no third device and no
+      emulator needed.
+
 ## Open assumptions (name them in the deck and in UI copy)
 
 - **Localisation is mostly not solved.** No RSSI / trilateration code exists anywhere. A
