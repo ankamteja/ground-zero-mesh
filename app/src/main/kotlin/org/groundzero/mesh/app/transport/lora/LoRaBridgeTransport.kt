@@ -13,7 +13,6 @@ import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.transport.Transport
 import java.util.ArrayDeque
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * [Transport] over an ESP32 / Meshtastic LoRa radio reached through a BLE-to-serial bridge.
@@ -34,17 +33,15 @@ class LoRaBridgeTransport(
 ) : Transport {
 
     /**
-     * Meshtastic firmware `DATA_PAYLOAD_LEN` is 233. On the stopgap framing the 8-byte
-     * [MeshtasticFrame] header sits inside that budget, so the codec is told 233 - 8. Once
-     * the native Meshtastic header carries `from`/`to` outside the payload this becomes the
-     * full 233.
+     * Meshtastic firmware `DATA_PAYLOAD_LEN` is 233; [MeshtasticFrame]'s header is paid for
+     * out of it. This is the same figure `Envelope` validates against, so an envelope that
+     * exists is an envelope this transport can carry — previously the two disagreed and
+     * [send] rejected anything over 225 after the report had already been built.
      */
-    override val maxFrameBytes: Int = CompactCodec.LORA_MAX_FRAME - MeshtasticFrame.HEADER_BYTES
+    override val maxFrameBytes: Int = CompactCodec.LORA_USABLE_FRAME
 
-    private val localNodeNum: Long = localId.value and 0xFFFF_FFFFL
-
-    private val nodeNumToId = ConcurrentHashMap<Long, NodeId>()
-    private val reassembler = MeshtasticFrame.Reassembler(maxPayload = CompactCodec.LORA_MAX_FRAME)
+    private val peers = java.util.concurrent.ConcurrentHashMap.newKeySet<NodeId>()
+    private val reassembler = MeshtasticFrame.Reassembler()
     private val writeQueue = ArrayDeque<ByteArray>()
 
     @Volatile private var listener: ((from: NodeId, frame: ByteArray) -> Unit)? = null
@@ -69,7 +66,10 @@ class LoRaBridgeTransport(
 
     override fun stop() {
         running = false
-        synchronized(writeQueue) { writeQueue.clear() }
+        synchronized(writeQueue) { writeQueue.clear(); writeInFlight = false }
+        // A half-received datagram must not survive into the next connection, where its
+        // trailing bytes would be prepended to a fresh frame and fail its CRC.
+        reassembler.reset()
         gatt?.let { runCatching { it.disconnect() }; runCatching { it.close() } }
         gatt = null
         rxChar = null
@@ -80,7 +80,7 @@ class LoRaBridgeTransport(
         check(running) { "transport not started" }
         require(frame.size <= maxFrameBytes) { "frame ${frame.size} > $maxFrameBytes" }
         // LoRa is a broadcast medium; `to` is advisory only and not honoured on this hop.
-        val datagram = MeshtasticFrame.encode(localNodeNum, frame)
+        val datagram = MeshtasticFrame.encode(localId, frame)
         synchronized(writeQueue) {
             var offset = 0
             while (offset < datagram.size) {
@@ -96,7 +96,7 @@ class LoRaBridgeTransport(
         this.listener = listener
     }
 
-    override fun knownPeers(): List<NodeId> = nodeNumToId.values.toList()
+    override fun knownPeers(): List<NodeId> = peers.toList()
 
     // --- BLE plumbing ---
 
@@ -109,7 +109,12 @@ class LoRaBridgeTransport(
         }
         val g = gatt
         val rx = rxChar
-        if (g == null || rx == null) { writeInFlight = false; return }
+        if (g == null || rx == null) {
+            // Put it back: dropping the chunk here would leave the datagram truncated on the
+            // wire, and the receiver's CRC would then reject a frame that was never corrupt.
+            synchronized(writeQueue) { writeQueue.addFirst(chunk); writeInFlight = false }
+            return
+        }
         // VERIFY(hardware): some bridges need WRITE_TYPE_NO_RESPONSE for throughput; others
         // drop bytes without an acked write. Confirm against the real module.
         @Suppress("DEPRECATION")
@@ -117,8 +122,8 @@ class LoRaBridgeTransport(
             rx.value = chunk
             rx.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
             if (!g.writeCharacteristic(rx)) {
-                writeInFlight = false
-                Log.w(TAG, "writeCharacteristic returned false")
+                synchronized(writeQueue) { writeQueue.addFirst(chunk); writeInFlight = false }
+                Log.w(TAG, "writeCharacteristic returned false — chunk requeued")
             }
         }
     }
@@ -149,7 +154,7 @@ class LoRaBridgeTransport(
         }
 
         override fun onCharacteristicWrite(g: BluetoothGatt, ch: BluetoothGattCharacteristic, status: Int) {
-            writeInFlight = false
+            synchronized(writeQueue) { writeInFlight = false }
             pumpWrites()
         }
 
@@ -166,8 +171,12 @@ class LoRaBridgeTransport(
 
     private fun handleInbound(chunk: ByteArray) {
         for (dg in reassembler.offer(chunk)) {
-            val from = nodeNumToId.getOrPut(dg.sourceNodeNum) { NodeId(dg.sourceNodeNum and NodeId.MAX_VALUE) }
-            listener?.invoke(from, dg.payload)
+            // A radio that hears its own transmission would otherwise ingest it as a peer's
+            // report. Gossip's propagation key would suppress the duplicate, but the peer
+            // table would still have learned this device as its own neighbour.
+            if (dg.source == localId) continue
+            peers.add(dg.source)
+            listener?.invoke(dg.source, dg.payload)
         }
     }
 

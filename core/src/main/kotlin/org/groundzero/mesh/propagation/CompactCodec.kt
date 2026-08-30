@@ -63,6 +63,29 @@ object CompactCodec : EnvelopeCodec {
      */
     const val LORA_MAX_FRAME: Int = 233
 
+    /**
+     * Bytes reserved out of [LORA_MAX_FRAME] for the link layer's own framing.
+     *
+     * A LoRa bridge cannot hand the radio a bare envelope: it has to say who sent it and how
+     * long it is, and on a BLE-to-serial link it has to be able to resynchronise after a
+     * corrupted chunk. That header lives *inside* `DATA_PAYLOAD_LEN`, so it comes out of the
+     * same 233 bytes.
+     *
+     * This was measured, not guessed. The largest envelope the schema can express is exactly
+     * 233 bytes (zone=1, four 17-byte views, seven peers, a 50-byte summary and a full
+     * v_SLM), so before this constant existed the ceiling left **zero** room for framing —
+     * and `LoRaBridgeTransport`, which subtracts its header from the budget, rejected every
+     * envelope above 225 at `send()`. An envelope that cannot cross the link it was sized
+     * for should not be constructible in the first place, which is what [LORA_USABLE_FRAME]
+     * now enforces.
+     *
+     * `MeshtasticFrame.HEADER_BYTES` must stay within this; a test in `:app` asserts it.
+     */
+    const val LORA_LINK_HEADER_RESERVE: Int = 10
+
+    /** What an envelope may actually occupy once the link's framing is paid for. */
+    const val LORA_USABLE_FRAME: Int = LORA_MAX_FRAME - LORA_LINK_HEADER_RESERVE
+
     /** Exact encoded size of [envelope] without allocating the frame. Used by the
      *  [Envelope] constructor to fail an over-budget envelope at construction time. */
     fun frameSize(envelope: Envelope): Int {
