@@ -884,6 +884,7 @@
     var w = canvas.clientWidth, h = canvas.clientHeight;
     if (!w || !h) return;
     ctx.clearRect(0, 0, w, h);
+    labelSlots = [];
     var line = cssVar("--line"), dim = cssVar("--dim"), text = cssVar("--text"), accent = cssVar("--accent"), unplaced = cssVar("--unplaced");
     var items = [];
 
@@ -944,6 +945,31 @@
 
     items.sort(function (a, b) { return b.depth - a.depth; });
     items.forEach(function (item) { paint(item, line, dim, text, accent, unplaced); });
+  }
+
+  // Labels drawn so far this frame, so the next one can step out of their way.
+  var labelSlots = [];
+
+  /**
+   * Draw a marker's label without letting it land on one already drawn.
+   *
+   * Incidents with no position are parked in a row, three schematic metres apart. That
+   * separates the *dots* fine, but a node id is far wider than the gap between them, so the
+   * text collided and three ids read as one unreadable smear — the exact failure mode the
+   * board must not have, since the id is how a responder tells two casualties apart. Nudging
+   * a colliding label down a line keeps every id readable and still attached to its own dot.
+   */
+  function labelAt(ctx, str, x, y) {
+    var wide = ctx.measureText(str).width, high = 12;
+    for (var attempt = 0; attempt < 8; attempt++) {
+      var clash = labelSlots.some(function (b) {
+        return x < b.x + b.w && x + wide > b.x && y - high < b.y && y > b.y - high;
+      });
+      if (!clash) break;
+      y += high;
+    }
+    labelSlots.push({ x: x, y: y, w: wide });
+    ctx.fillText(str, x, y);
   }
 
   function paint(item, line, dim, text, accent, unplaced) {
@@ -1022,7 +1048,7 @@
 
       ctx.fillStyle = text;
       ctx.font = "10px ui-monospace, monospace";
-      ctx.fillText("this device (responder)", sp.x + d + 6, sp.y + 3);
+      labelAt(ctx, "this device (responder)", sp.x + d + 6, sp.y + 3);
       return;
     }
 
@@ -1065,7 +1091,7 @@
 
     ctx.fillStyle = c.placed ? dim : unplaced;
     ctx.font = "10px ui-monospace, monospace";
-    ctx.fillText(c.origin + (c.placed ? "" : "  UNPLACED"), p.x + r + 6, p.y + 3);
+    labelAt(ctx, c.origin + (c.placed ? "" : "  UNPLACED"), p.x + r + 6, p.y + 3);
     c._screen = p;
   }
 
