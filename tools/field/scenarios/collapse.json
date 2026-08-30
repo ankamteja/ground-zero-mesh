@@ -1,0 +1,18 @@
+{
+  "name": "victim walks out of range, relay holds the frame",
+  "comment": [
+    "Three phones in one netsim scene. The victim starts beside the relay, the",
+    "relay stays put between victim and gateway, and at t+20s the victim is",
+    "carried 150 units away - far enough that the direct victim-to-gateway link",
+    "is gone and anything that still arrives arrived through the relay.",
+    "Watch the responder dashboard while this runs: an incident that keeps",
+    "updating after t+40s is StoreAndForward and the relay doing their job."
+  ],
+  "steps": [
+    { "at": 0,  "place": { "device": "emulator-5554", "x": 0,   "y": 0 } },
+    { "at": 0,  "place": { "device": "emulator-5556", "x": 40,  "y": 0 } },
+    { "at": 0,  "place": { "device": "emulator-5558", "x": 80,  "y": 0 } },
+    { "at": 20, "walk":  { "device": "emulator-5554", "to": [-150, 0], "seconds": 30 } },
+    { "at": 60, "walk":  { "device": "emulator-5554", "to": [0, 0], "seconds": 30 } }
+  ]
+}
