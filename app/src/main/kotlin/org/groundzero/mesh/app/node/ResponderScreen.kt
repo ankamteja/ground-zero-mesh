@@ -1,5 +1,7 @@
 package org.groundzero.mesh.app.node
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,11 +59,45 @@ fun ResponderScreen(modifier: Modifier = Modifier) {
 
         if (running) {
             Label("Dashboard")
-            Text(
-                "Open this phone's hotspot, join it from the laptop, then browse to " +
-                    "http://<this-phone-ip>:${GatewayServer.DEFAULT_PORT}/",
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            // The board is served by this phone, so this phone can read it. That matters
+            // more than it sounds: without this the only way to see the ranked board and the
+            // 3D view — the whole output of the system — is a second device joined to a
+            // hotspot. One person holding one phone could not see their own board.
+            Button(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("http://127.0.0.1:${GatewayServer.DEFAULT_PORT}/"),
+                            ),
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Open the board on this phone") }
+
+            val addresses = remember(running) { LocalAddresses.ipv4() }
+            if (addresses.isEmpty()) {
+                Text(
+                    "No network address yet — open this phone's hotspot, then a laptop that " +
+                        "joins it can browse to port ${GatewayServer.DEFAULT_PORT}.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            } else {
+                // The literal "<this-phone-ip>" used to sit here, leaving the responder to go
+                // and find their own address in Settings while the incident ran.
+                Text(
+                    "From a laptop on this phone's hotspot, browse to:",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                addresses.forEach { address ->
+                    Text(
+                        "http://$address:${GatewayServer.DEFAULT_PORT}/",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+            }
         } else {
             Text(
                 "The board is not being served.",
