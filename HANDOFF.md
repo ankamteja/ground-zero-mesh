@@ -1,7 +1,7 @@
 # Handoff — where things stand (2026-08-30, evening)
 
 Written fresh, replacing the earlier version of this file — everything it tracked is now
-either landed or superseded below. `main` is at `d07bea4`. `./gradlew test` (236 tests
+either landed or superseded below. `main` is at `d07bea4`. `./gradlew test` (373 tests
 across `core` + `app`) and `:app:assembleDebug` are both green in this environment (which
 now has an Android SDK — several things below were build-verified here for the first time).
 
@@ -101,7 +101,7 @@ does.
    fixed by moving the registration into `LanRelayTransport`'s own `init`, unconditional and
    one-time.
 
-`./gradlew test` (both modules, 236 tests) and `:app:assembleDebug` are green as of this
+`./gradlew test` (both modules, 373 tests) and `:app:assembleDebug` are green as of this
 write-up — the first time either has been verified in an environment with the Android SDK.
 **Still not run on two real phones and a real laptop over a real network.** Runbook is in
 `README.md`'s "Two phones and a laptop relay" section:

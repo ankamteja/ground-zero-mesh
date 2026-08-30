@@ -68,7 +68,11 @@ severity doing its job, not a bug.
 ## Sensory evidence flags
 
 Eight bits, set on the reporting device before anything crosses the wire: `rushing water`,
-`screaming`, `pinned`, `impact`, `enclosed / dark`, `manual SOS`, `enriched`, `reserved`.
+`screaming`, `pinned`, `impact`, `enclosed / dark`, `manual SOS`, `enriched`,
+`structural crack`.
+
+`structural crack` is a sharp broadband transient — an impact or a structural failure near
+the device. It is the third-heaviest channel in the danger score, above a voice.
 
 No raw audio, image or video ever crosses the mesh. What arrives is these flags plus,
 optionally, a 16-slot feature vector. `screaming` means a spectral classifier on that phone
