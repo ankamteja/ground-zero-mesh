@@ -1,0 +1,15 @@
+# The retrieval corpus, listed rather than directory-scanned.
+#
+# Classpath directory listing works from a build folder and silently returns nothing from
+# inside a jar. An explicit index behaves the same in both, which matters because the second
+# case is the one nobody tests until the field.
+#
+# Lines starting with '#' and blank lines are ignored. Add a file here when you add it to
+# this folder, or it will not be retrieved.
+
+board-and-fields.md
+triage-and-dispatch.md
+water-rescue.md
+structural-collapse.md
+mesh-operations.md
+limits-and-cautions.md

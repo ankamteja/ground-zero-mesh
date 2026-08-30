@@ -38,6 +38,18 @@ tasks.register<JavaExec>("runRelay") {
     args = (project.findProperty("relayArgs") as String?)?.split(" ") ?: emptyList()
 }
 
+/** The responder laptop's RAG advisor — see AdvisorMain's doc for the flags.
+ *  `-PadvisorArgs="--gateway http://192.168.43.1:8080 --model qwen3:8b"`. */
+tasks.register<JavaExec>("runAdvisor") {
+    group = "application"
+    description = "Run the local LLM advisor the responder dashboard queries (needs `ollama serve`)"
+    mainClass.set("org.groundzero.mesh.advisor.AdvisorMain")
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootProject.projectDir
+    standardInput = System.`in`
+    args = (project.findProperty("advisorArgs") as String?)?.split(" ") ?: emptyList()
+}
+
 tasks.test {
     useJUnitPlatform()
     testLogging {
