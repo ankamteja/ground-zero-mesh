@@ -175,9 +175,21 @@ cmd_status() {
   need_device "$serial"
   p=$("$ADB" -s "$serial" shell "run-as $PKG cat $PREFS" 2>/dev/null)
   say "  --- $serial ---"
-  say "    role       : $(echo "$p" | grep -o 'mesh_role\">[^<]*' | cut -d'>' -f2)"
-  say "    relay_host : $(echo "$p" | grep -o 'relay_host\">[^<]*' | cut -d'>' -f2 || true)  (blank = Nearby radio, correct)"
-  say "    serving    : $(echo "$p" | grep -o 'gateway_serving\" value=\"[^\"]*' | cut -d'\"' -f3)"
+  # Parsed in python rather than grep|cut: the shell quoting this needed to pull values out
+  # of XML attributes is what made it die on `cut: the delimiter must be a single character`.
+  printf '%s' "$p" | python3 -c '
+import sys, re
+x = sys.stdin.read()
+def s(n):
+    m = re.search(r"<string name=\"%s\">([^<]*)</string>" % n, x); return m.group(1) if m else ""
+def b(n):
+    m = re.search(r"<boolean name=\"%s\" value=\"([^\"]*)\"" % n, x); return m.group(1) if m else ""
+i = re.search(r"name=\"node_id\" value=\"(\d+)\"", x)
+print("    role       :", s("mesh_role") or "NODE (default)")
+print("    relay_host :", s("relay_host") or "<blank> = Nearby radio  [correct]")
+print("    serving    :", b("gateway_serving") or "false")
+print("    node id    :", i.group(1) if i else "(none yet)")
+' 2>/dev/null || say "    (no prefs yet — has the app been launched on this phone?)"
   say "    bluetooth  : $("$ADB" -s "$serial" shell settings get global bluetooth_on 2>/dev/null | tr -d '\r')"
 }
 
