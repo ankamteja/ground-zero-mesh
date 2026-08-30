@@ -7,6 +7,7 @@ import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.transport.TcpTransport
 import org.groundzero.mesh.transport.Transport
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * [RadioTransport] over [TcpTransport] — the alternative to [NearbyTransport] for whenever
@@ -83,8 +84,19 @@ class LanRelayTransport(
         }
     }
 
+    /**
+     * Let whatever is already queued reach the socket before closing it.
+     *
+     * Now that [send] returns before the write happens, a frame handed over just before
+     * shutdown is still sitting in the queue -- and the last frame before a service stops is
+     * the one most likely to matter, since the service usually stops because the phone is
+     * dying. A second is long enough for a queue that only ever holds a few small frames and
+     * short enough not to hang `onDestroy`; past that the relay is unreachable anyway and
+     * waiting longer changes nothing.
+     */
     override fun stop() {
         writer.shutdown()
+        runCatching { writer.awaitTermination(1, TimeUnit.SECONDS) }
         delegate.stop()
     }
 
