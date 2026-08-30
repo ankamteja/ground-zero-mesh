@@ -81,6 +81,10 @@ starts working the moment a full `netsimd` is on the path.
 
 ## Use
 
+**Step-by-step, with what each command prints and what to do when it fails:
+[`docs/running_actual_emulation.md`](../../docs/running_actual_emulation.md).**
+This file is the design rationale; that one is the run-book.
+
 ```bash
 ./setup.sh                       # once: venv + generated netsim gRPC stubs
 ./field.sh up 3                  # three headless phones, one radio scene
@@ -91,6 +95,35 @@ starts working the moment a full `netsimd` is on the path.
 ./field.sh install               # push app/build/outputs/apk/debug/app-debug.apk
 ./field.sh down
 ```
+
+### Driving a phone that has no one to tap it
+
+A headless phone still has to be told what it is, and someone still has to press
+SOS. Both are done through the app's own surfaces rather than around them:
+
+```bash
+./configure.sh emulator-5554 NODE 10.0.2.2:7802   # role + relay host
+./sos.sh emulator-5554 drowning                   # raise an SOS
+```
+
+`configure.sh` writes `RoleStore` and `RelayHostStore` — plain SharedPreferences
+— with `run-as`, which a debug build allows. It **merges** the prefs file rather
+than replacing it: `NodeIdStore` keeps `node_id` in the same file, and that id is
+the phone's identity on the mesh, so overwriting it hands the node a new identity
+on every configure and the board shows a different victim each run. Both settings
+are read once, at service start, so the script force-stops the app and you
+relaunch after.
+
+`mirror.sh` puts those phones on screen (scrcpy, over adb, no reboot) when a run
+has to be *shown* rather than described. The field stays headless by default
+because that is what makes two phones fit on a 16 GB laptop.
+
+`sos.sh` is deliberately not a back door. It taps the real Compose buttons —
+found by label in a `uiautomator` dump, not by pixel — so the frame that reaches
+the board came through `VictimScreen` → `NodeViewModel` → `NodeAgent.raiseSos`
+like any other. A board row therefore proves the whole path, which an injected
+frame would not. It fails the run if `FATAL EXCEPTION` appears afterwards; that
+is how the `NetworkOnMainThreadException` in `LanRelayTransport` was found.
 
 ### A real phone as the responder
 
@@ -106,10 +139,23 @@ the way the repo already supports a device joining without Nearby — over
 ./responder.sh detach
 ```
 
-Verified on an SM-S931B (Android 16): the tunnel was created and the phone
-reached a server running on the laptop through it. `responder.sh` targets the
-physical device only and never an emulator, so it is safe to run with a field
-up; set `FIELD_RESPONDER=<serial>` when more than one phone is plugged in.
+Verified on an SM-S931B (Android 16), end to end and in that order: the phone
+joined the relay under its own persisted id (`peers=3`), a victim emulator raised
+an SOS through the real UI, and the row appeared on the **board the phone itself
+computed and served** —
+
+```
+clusters: 1
+  e7fe-3bb2-76f2  DROWNING_IMMINENT  reports 2  age 15s  hops 2
+```
+
+`hops 2` means it crossed the relay, and `GatewayServer` assembled that row on a
+physical handset. Read it from the laptop with
+`adb -s <serial> forward tcp:8099 tcp:8080`.
+
+`responder.sh` targets the physical device only and never an emulator, so it is
+safe to run with a field up; set `FIELD_RESPONDER=<serial>` when more than one
+phone is plugged in, and `FIELD_RELAY_PORT=` when 7777 is taken.
 
 `field.sh up` runs one AVD N times with `-read-only`, so three phones cost one
 7 GB AVD image rather than three. Each is headless, 1536 MB by default
@@ -169,7 +215,10 @@ payload limit that a real Meshtastic hop imposes.
 proto/        netsim + rootcanal .proto, vendored from AOSP (Apache 2.0)
 setup.sh      venv + generated gRPC stubs (gen/, gitignored)
 netsimctl.py  place / walk / scenario / list / reset
-field.sh      up / down / status / install    (emulators)
-responder.sh  attach / detach / install / status  (a real phone)
+field.sh      up / down / status / install / geo   (emulators)
+responder.sh  attach / detach / install / status   (a real phone)
+configure.sh  role + relay host, headlessly        (any phone)
+sos.sh        raise an SOS through the real UI     (any phone)
+mirror.sh     put the phones on screen for a demo  (scrcpy)
 scenarios/    timelines a run can replay
 ```
