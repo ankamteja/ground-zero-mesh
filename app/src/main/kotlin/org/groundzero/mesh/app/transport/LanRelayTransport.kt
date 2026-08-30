@@ -6,6 +6,7 @@ import org.groundzero.mesh.app.service.MeshForegroundService
 import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.transport.TcpTransport
 import org.groundzero.mesh.transport.Transport
+import java.util.concurrent.Executors
 
 /**
  * [RadioTransport] over [TcpTransport] — the alternative to [NearbyTransport] for whenever
@@ -27,6 +28,29 @@ class LanRelayTransport(
 
     override val peers = PeerTable()
 
+    /**
+     * Writes leave the caller's thread here.
+     *
+     * [TcpTransport.send] writes to a socket and flushes, synchronously. On a phone the
+     * caller is often the main thread -- `VictimScreen`'s SOS button goes straight through
+     * `NodeViewModel` and `NodeAgent.raiseSos` into this transport -- and Android kills a
+     * process that touches a socket there:
+     *
+     *     android.os.NetworkOnMainThreadException
+     *         at TcpFraming.writeFrame ... at NodeAgent.raiseSos ... at VictimScreen
+     *
+     * No JVM test can catch that: `SimNetwork` has no sockets and StrictMode is an Android
+     * runtime policy. It reproduces on a phone every time the relay path is used.
+     *
+     * A single thread, not a pool: [Transport.send] returns Unit and is already
+     * fire-and-forget, so nothing observes completion, but frame *order* on one link still
+     * has to hold. `NearbyTransport` needs none of this -- the Nearby SDK is already
+     * asynchronous -- which is why the fix belongs here rather than at the call site.
+     */
+    private val writer = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "LanRelayTransport-write").apply { isDaemon = true }
+    }
+
     private var receiveListener: ((from: NodeId, frame: ByteArray) -> Unit)? = null
     private var peerConnectedListener: ((NodeId) -> Unit)? = null
 
@@ -47,6 +71,21 @@ class LanRelayTransport(
             peers.sawInbound(peer, peer.canonical())
             peerConnectedListener?.invoke(peer)
         }
+    }
+
+    /** Hand the frame to [writer] and return; see its doc for why. */
+    override fun send(frame: ByteArray, to: NodeId?) {
+        val copy = frame.copyOf()  // the caller may reuse its array once send() returns
+        writer.execute {
+            // A dead relay must not take the writer thread with it: TcpTransport already
+            // reconnects on its own, and the next frame should still get a chance.
+            runCatching { delegate.send(copy, to) }
+        }
+    }
+
+    override fun stop() {
+        writer.shutdown()
+        delegate.stop()
     }
 
     override fun onReceive(listener: (from: NodeId, frame: ByteArray) -> Unit) {
