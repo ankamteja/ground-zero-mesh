@@ -26,6 +26,7 @@ import org.groundzero.mesh.app.sensors.AudioBridge
 import org.groundzero.mesh.app.sensors.GpsBridge
 import org.groundzero.mesh.app.sensors.SensorBridge
 import org.groundzero.mesh.app.transport.StoreAndForward
+import org.groundzero.mesh.propagation.Envelope
 import org.groundzero.mesh.propagation.Gossip
 import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.transport.TcpTransport
@@ -100,7 +101,7 @@ class MeshForegroundService : Service() {
             saltFingerprint = NodeIdStore.saltFingerprint(localId),
             // TODO: a responder-entered zone. Localisation is not solved, and a fabricated
             // coordinate here would read as solved on the dashboard.
-            addressZone = UNSET_ZONE,
+            addressZone = Envelope.UNSET_ZONE,
             transport = GossipOriginTransport(radio, gossip) { envelope, frame ->
                 storeAndForward.offer(envelope.addressZone, envelope.dedupKey, frame)
             },
@@ -257,9 +258,6 @@ class MeshForegroundService : Service() {
         private const val NOTIF_ID = 1
         private const val WAKE_LOCK_TAG = "groundzero:mesh"
         private const val MAINTENANCE_INTERVAL_MS = 30_000L
-
-        /** No zone until a responder can enter one. See the `addressZone` TODO in onCreate. */
-        const val UNSET_ZONE = "unset"
 
         fun start(context: Context) {
             val intent = Intent(context, MeshForegroundService::class.java)
