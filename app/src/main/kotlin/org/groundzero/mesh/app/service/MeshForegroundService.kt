@@ -15,6 +15,7 @@ import android.os.PowerManager
 import android.util.Log
 import org.groundzero.mesh.agent.NodeAgent
 import org.groundzero.mesh.app.NodeIdStore
+import org.groundzero.mesh.app.gateway.GatewayController
 import org.groundzero.mesh.app.mesh.MeshStack
 import org.groundzero.mesh.app.transport.GossipOriginTransport
 import org.groundzero.mesh.app.transport.LanRelayTransport
@@ -22,6 +23,7 @@ import org.groundzero.mesh.app.transport.NearbyTransport
 import org.groundzero.mesh.app.transport.RadioTransport
 import org.groundzero.mesh.app.node.MeshRole
 import org.groundzero.mesh.app.node.RelayHostStore
+import org.groundzero.mesh.app.node.GatewayStore
 import org.groundzero.mesh.app.node.RoleStore
 import org.groundzero.mesh.app.permissions.MeshPermissions
 import org.groundzero.mesh.app.sensors.AudioBridge
@@ -186,6 +188,17 @@ class MeshForegroundService : Service() {
             // A relay in a stairwell has no business holding the microphone open: it cannot
             // originate a report, so nothing downstream could ever read what it heard.
             audio?.stop()
+        }
+        // The board is part of the gateway role, not just of a screen someone is looking at.
+        // GatewayController.start used to be reachable only from ResponderScreen's button, so
+        // a reclaimed process came back relaying but serving nothing while the phone still
+        // read "responder" — see GatewayStore.
+        if (role == MeshRole.GATEWAY && GatewayStore.isServing(this)) {
+            GatewayController.start(this, clusterSource = MeshStack::rankedBoard)
+        } else if (role != MeshRole.GATEWAY) {
+            // Intent is deliberately not cleared: returning to the role resumes serving
+            // rather than making the responder ask for the board twice.
+            GatewayController.stop()
         }
         RoleStore.set(this, role)
         Log.i(TAG, "role is now $role")

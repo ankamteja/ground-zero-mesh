@@ -46,6 +46,9 @@ fun ResponderScreen(modifier: Modifier = Modifier) {
                     GatewayController.start(context, clusterSource = MeshStack::rankedBoard)
                 }
                 running = GatewayController.isRunning
+                // Recorded so the board comes back by itself if Android reclaims this
+                // process mid-incident — see GatewayStore.
+                GatewayStore.setServing(context, running)
             },
             modifier = Modifier.fillMaxWidth(),
         ) {
