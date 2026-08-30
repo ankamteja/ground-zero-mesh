@@ -81,6 +81,33 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
     private val clusters = LinkedHashMap<String, IncidentCluster>()
 
     /**
+     * Incidents a responder has explicitly cleared off the board, by [Envelope.dedupKey].
+     *
+     * Clearing the map alone does not hold: the mesh is still full of those frames. A peer
+     * reconnecting replays its [org.groundzero.mesh.app.transport.StoreAndForward] buffer,
+     * and a victim whose incident is still open keeps heartbeating — and both arrive on
+     * [Gossip]'s *duplicate* path, which deliberately still calls [ingest] because a second
+     * copy by another route is corroboration. So a cleared board repopulated itself within
+     * seconds and looked like the clear button had done nothing.
+     *
+     * Keyed on incident identity rather than a timestamp cutoff so that this survives clock
+     * skew between phones, which on a mesh of unsynchronised handsets is the normal case.
+     * A genuinely new incident mints a new `nodeId@timestamp` and is unaffected.
+     */
+    private val cleared = LinkedHashSet<String>()
+
+    /**
+     * Drop every incident currently on the board and refuse those same incidents if they
+     * arrive again. See [cleared] for why refusing is part of clearing rather than a
+     * separate concern.
+     */
+    fun clear() {
+        cleared.addAll(clusters.keys)
+        while (cleared.size > CLEARED_CAPACITY) cleared.remove(cleared.first())
+        clusters.clear()
+    }
+
+    /**
      * Fold one envelope in.
      *
      * [from] is the peer the frame arrived from, which is not the same as
@@ -90,6 +117,28 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
      */
     fun ingest(envelope: Envelope, from: NodeId?, nowMs: Long): IncidentCluster {
         val key = envelope.dedupKey
+        // A responder cleared this one. Replays and continued heartbeats of it are exactly
+        // what [cleared] exists to absorb, so it must not come back onto the board.
+        if (key in cleared) {
+            return IncidentCluster(
+                key = key,
+                origin = envelope.nodeId,
+                zone = envelope.addressZone,
+                severity = envelope.severity,
+                dangerScore = envelope.dangerScore,
+                tier = envelope.effectiveTier,
+                corroborators = setOfNotNull(from),
+                minHops = envelope.hops,
+                firstSeenMs = nowMs,
+                lastUpdatedMs = nowMs,
+                slmSummary = envelope.slmSummary,
+                flags = envelope.flags,
+                featureVector = envelope.featureVector,
+                firstHandHeld = envelope.effectiveTier == EpistemologyTier.PRATYAKSA,
+                gpsLat = envelope.gpsLat,
+                gpsLon = envelope.gpsLon,
+            )
+        }
         val existing = clusters[key]
         val isFirstHand = envelope.effectiveTier == EpistemologyTier.PRATYAKSA
 
@@ -230,4 +279,14 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
 
     private fun strongest(a: EpistemologyTier, b: EpistemologyTier): EpistemologyTier =
         if (a.ordinal <= b.ordinal) a else b
+
+    companion object {
+        /**
+         * How many cleared incidents are remembered. Bounded for the same reason
+         * [Gossip.DEFAULT_SEEN_CAPACITY] is: a responder clearing the board through a long
+         * night must not grow a set forever. Oldest-first eviction means a very old cleared
+         * incident could reappear if it is still circulating, which is the cheaper failure.
+         */
+        const val CLEARED_CAPACITY = 512
+    }
 }

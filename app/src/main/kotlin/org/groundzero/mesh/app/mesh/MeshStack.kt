@@ -73,6 +73,32 @@ object MeshStack {
         totalReceived = 0
     }
 
+    /**
+     * Clear the responder's board, and stop this device feeding it again.
+     *
+     * Three things have to go together or the board repopulates within seconds, which is
+     * what made the old dashboard "clear" look broken:
+     *
+     * 1. the clusters themselves, and a note not to re-accept those same incidents
+     *    ([Gossip.clearBoard]);
+     * 2. this device's replay buffer, or the next peer to reconnect is handed the cleared
+     *    frames straight back ([StoreAndForward.clear]);
+     * 3. the relay screen's log and counters, which describe the same traffic.
+     *
+     * What it deliberately does *not* do is reach other phones. A victim whose incident is
+     * still open keeps heartbeating, and no mesh-wide "resolved" broadcast exists — see
+     * [markPeerFound] for the same limitation stated at the peer level. So this clears what
+     * this gateway holds and refuses those incidents thereafter; it does not end anyone's
+     * emergency, and a genuinely new SOS still arrives normally.
+     */
+    fun clearBoard() = synchronized(lock) {
+        gossip?.clearBoard()
+        store?.clear()
+        activity.clear()
+        totalReceived = 0
+        Unit
+    }
+
     fun currentRole(): MeshRole = synchronized(lock) { role }
 
     /**

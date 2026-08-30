@@ -214,6 +214,15 @@
   <span id="simMsg"></span>
 </div>
 
+<!-- The live counterpart. A real gateway gets no SOS buttons — reports come off the mesh,
+     and inventing one here is the same confusion the source toggle stays hidden to avoid —
+     but it does need to clear its own board, which this page had no way to do. -->
+<div id="liveControls" class="sim-controls" hidden>
+  <span>live board &mdash;</span>
+  <button type="button" id="liveClear">clear board</button>
+  <span id="liveMsg"></span>
+</div>
+
 <main>
   <div id="stage">
     <canvas id="view" aria-hidden="true"></canvas>
@@ -364,6 +373,10 @@
     b.title = "click to switch to " + (srcMode === "self" ? OTHER_NAME : SELF_NAME);
     var sc = $("simControls");
     if (sc) sc.hidden = !(IS_SIM_PAGE && srcMode === "self");
+    // Shown exactly where simControls is not: a real gateway serving its own board. Not on
+    // the Vercel deploy, whose board is a list in this page rather than a mesh.
+    var lc = $("liveControls");
+    if (lc) lc.hidden = IS_WEBSIM || IS_SIM_PAGE;
   }
 
   // emulation control API (GwHeadless --sim serves it on the dashboard port + 10)
@@ -396,6 +409,26 @@
     if (c) c.onclick = function () {
       if (IS_WEBSIM) { webSos = []; var m = $("simMsg"); if (m) m.textContent = "board cleared"; webPoll(); }
       else simPost("/clear");
+    };
+  })();
+
+  // The live board's own clear. Same-origin POST to the gateway serving this page, not the
+  // emulation control API on port+10 that simPost uses and that no phone runs.
+  (function wireLiveControls() {
+    var c = $("liveClear"); if (!c) return;
+    c.onclick = function () {
+      var m = $("liveMsg"); if (m) m.textContent = "clearing…";
+      fetch(base() + "/clear", { method: "POST" })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+        .then(function () {
+          if (m) m.textContent = "board cleared";
+          // Repaint now rather than waiting up to pushIntervalMs for the next SSE frame,
+          // so the button visibly does something.
+          return fetch(base() + "/snapshot", { cache: "no-store" })
+            .then(function (r) { return r.text(); })
+            .then(ingest);
+        })
+        .catch(function () { if (m) m.textContent = "clear failed — is this gateway still serving?"; });
     };
   })();
 

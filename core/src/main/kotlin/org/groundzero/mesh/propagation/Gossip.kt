@@ -91,6 +91,18 @@ class Gossip(
 
     fun clusters(): List<IncidentCluster> = clusters.clusters()
 
+    /**
+     * Clear the responder's board.
+     *
+     * [seen] is deliberately left alone. It is the loop-suppression set, not board state —
+     * dropping it would make this node re-forward every frame it still holds, turning a
+     * responder tidying their screen into a re-flood of the mesh. Suppressing the cleared
+     * incidents themselves is [DedupCluster]'s job; see its `cleared` set.
+     */
+    fun clearBoard() {
+        clusters.clear()
+    }
+
     fun dedup(): DedupCluster = clusters
 
     /**

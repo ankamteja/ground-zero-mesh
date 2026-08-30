@@ -69,6 +69,18 @@ class StoreAndForward(
         }
     }
 
+    /**
+     * Drop every buffered frame without replaying it.
+     *
+     * The counterpart of [drainAll] for a responder clearing the board: this device must
+     * stop being a source of the incidents that were just cleared. Without it the gateway
+     * clears its own screen and then hands the very same frames back to the next peer that
+     * reconnects, which is the board repopulating "out of nowhere".
+     */
+    fun clear() {
+        buckets.clear()
+    }
+
     /** Frames currently buffered across every bucket, expired ones excluded. */
     fun size(): Int {
         val now = clock()

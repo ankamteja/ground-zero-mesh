@@ -40,6 +40,7 @@ class GatewayServer(
     private val clustersNow: () -> List<RankedIncident>,
     private val onMarkFound: (NodeId) -> Unit = {},
     private val localNodeId: () -> NodeId? = { null },
+    private val onClearBoard: () -> Unit = {},
 ) : NanoHTTPD(port) {
 
     private val subscribers = CopyOnWriteArrayList<PipedOutputStream>()
@@ -71,6 +72,7 @@ class GatewayServer(
 
     override fun serve(session: IHTTPSession): Response = when {
         session.uri == "/resolve" && session.method == Method.POST -> resolve(session)
+        session.uri == "/clear" && session.method == Method.POST -> clear()
         session.uri == "/" || session.uri == "/index.html" -> asset("index.html", "text/html")
         session.uri == "/snapshot" -> json(payload())
         session.uri == "/events" -> sse()
@@ -89,6 +91,19 @@ class GatewayServer(
         val raw = session.parms["peer"] ?: return badRequest("missing peer")
         val nodeId = runCatching { NodeId.parse(raw) }.getOrElse { return badRequest("bad peer id") }
         onMarkFound(nodeId)
+        return json("{\"ok\":true}")
+    }
+
+    /**
+     * Clear the board this gateway is serving. [onClearBoard] is `MeshStack::clearBoard` in
+     * the app — see there for what a clear does and does not reach.
+     *
+     * Live boards had no route for this at all: the dashboard's "clear board" button posted
+     * to the *emulation* control API on port+10, which nothing serves on a phone, so the
+     * button reported the control API unreachable and the incidents stayed put.
+     */
+    private fun clear(): Response {
+        onClearBoard()
         return json("{\"ok\":true}")
     }
 
