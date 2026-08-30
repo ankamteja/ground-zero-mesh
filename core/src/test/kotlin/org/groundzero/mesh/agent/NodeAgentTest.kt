@@ -215,11 +215,14 @@ class NodeAgentTest {
     }
 
     @Test
-    fun `a posture change is worth a heartbeat`() {
+    fun `a posture change is worth a heartbeat once an SOS is open`() {
         val clock = Clock()
         val (node, _) = agent(clock)
 
+        node.raiseSos(Severity.STRUCTURAL_ENTRAPMENT)
         repeat(30) { node.senseTick(1.0) }
+        // raiseSos already broadcast ALARM, so the next beat is the periodic one.
+        clock.advance(NodeAgent.HEARTBEAT_INTERVAL_MS)
         val beat = node.heartbeatTick()
 
         assertNotNull(beat)
@@ -230,10 +233,47 @@ class NodeAgentTest {
     fun `the same posture does not get repeated every tick`() {
         val clock = Clock()
         val (node, _) = agent(clock)
+        node.raiseSos(Severity.STRUCTURAL_ENTRAPMENT)
         repeat(30) { node.senseTick(1.0) }
+        clock.advance(NodeAgent.HEARTBEAT_INTERVAL_MS)
 
         assertNotNull(node.heartbeatTick())
         assertNull(node.heartbeatTick(), "nothing changed and the interval has not elapsed")
+    }
+
+    @Test
+    fun `a node with no SOS stays silent however much it senses`() {
+        // A phone merely picked up, jostled, or left near a conversation must not transmit.
+        // The heartbeat used to gate on sensor posture alone, so an untouched handset put
+        // out "something is happening here" that no human had asserted — traffic on a relay
+        // screen from a phone nobody pressed, and on a responder's board indistinguishable
+        // from a real report.
+        val clock = Clock()
+        val (node, _) = agent(clock)
+
+        repeat(60) { node.senseTick(1.0) }
+
+        assertNull(
+            node.heartbeatTick(),
+            "a node with no incident transmitted; only a pressed SOS may put this phone on air",
+        )
+    }
+
+    @Test
+    fun `sensing still runs while silent, so the SOS carries evidence immediately`() {
+        // The gate is on transmission, not on sensing. What the phone worked out while quiet
+        // must still be there the moment the button is pressed, or this fix would have cost
+        // the evidence it was meant to protect.
+        val clock = Clock()
+        val (node, _) = agent(clock)
+
+        repeat(30) { node.senseTick(1.0) }
+        assertNull(node.heartbeatTick(), "still no incident, still silent")
+
+        val sos = node.raiseSos(Severity.STRUCTURAL_ENTRAPMENT)
+        assertEquals(EpistemologyTier.PRATYAKSA, sos.tier)
+        clock.advance(NodeAgent.HEARTBEAT_INTERVAL_MS)
+        assertNotNull(node.heartbeatTick(), "with an incident open the node speaks again")
     }
 
     @Test

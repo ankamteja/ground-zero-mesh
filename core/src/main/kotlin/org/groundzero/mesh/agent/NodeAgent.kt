@@ -156,10 +156,25 @@ class NodeAgent(
      * for a while says **nothing at all** — silence is the correct output of a quiet
      * ticker, and it is most of the battery saving in the whole design.
      *
+     * **Nothing is broadcast until a person presses SOS.** This used to gate on sensor
+     * posture alone, so a phone that was merely picked up, jostled or sat near a
+     * conversation transmitted heartbeats with no incident behind them — a report of
+     * "something is happening here" that no human had asserted. On a responder's board
+     * those are indistinguishable from a real node reporting, and on a relay screen they
+     * are traffic appearing from a phone nobody has touched.
+     *
+     * Sensing itself is unchanged and keeps running: [dangerScore] and the gate go on
+     * tracking posture the whole time, so the moment SOS *is* pressed the evidence is
+     * already there. What changes is only whether this node talks about it unasked.
+     *
      * The envelope carries the conclusion and never the evidence, so its size does not grow
      * with how much history this node holds.
      */
     fun heartbeatTick(): Envelope? {
+        // No incident, no transmission. A node speaks about a person in trouble, and until
+        // the button is pressed there is no such person on this phone.
+        val incident = activeIncident ?: return null
+
         val now = clockMs()
         val postureChanged = gate.state != lastBroadcastState
         val periodicDue = gate.state != AgentState.CALM &&
@@ -170,9 +185,9 @@ class NodeAgent(
 
         val envelope = buildEnvelope(
             tier = EpistemologyTier.PRATYAKSA,
-            severity = activeIncident?.severity ?: Severity.OTHER,
+            severity = incident.severity,
             score = dangerScore.score,
-            timestampSeconds = activeIncident?.atSeconds ?: (now / 1000),
+            timestampSeconds = incident.atSeconds,
             views = buildList {
                 add("STATE:" + gate.state.name)
                 lastEvent?.let { add("EVENT:" + it.name) }
