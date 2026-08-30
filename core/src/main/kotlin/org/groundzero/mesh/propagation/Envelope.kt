@@ -92,9 +92,15 @@ data class Envelope(
         gpsLat?.let { require(it in -90f..90f) { "gpsLat must be -90..90, got $it" } }
         gpsLon?.let { require(it in -180f..180f) { "gpsLon must be -180..180, got $it" } }
 
+        // Against the *usable* payload, not the raw 233. The LoRa link spends
+        // CompactCodec.LORA_LINK_HEADER_RESERVE bytes of that on its own framing, so an
+        // envelope sized to the raw figure is one the radio can never actually carry — and
+        // LoRaBridgeTransport.send() rejected exactly those at the last possible moment,
+        // after the report had already been built and the sensory window spent.
         val frame = CompactCodec.frameSize(this)
-        require(frame <= CompactCodec.LORA_MAX_FRAME) {
-            "envelope does not fit a LoRa frame: $frame > ${CompactCodec.LORA_MAX_FRAME} bytes"
+        require(frame <= CompactCodec.LORA_USABLE_FRAME) {
+            "envelope does not fit a LoRa frame: $frame > ${CompactCodec.LORA_USABLE_FRAME} bytes " +
+                "(${CompactCodec.LORA_MAX_FRAME} on air, less ${CompactCodec.LORA_LINK_HEADER_RESERVE} for link framing)"
         }
     }
 
