@@ -94,7 +94,12 @@ class SensoryFlagsTest {
     fun `the plan's illustrative byte decodes to what it claims`() {
         val flags = 0x8F.toByte()
         val described = SensoryFlags.describe(flags)
-        assertEquals(listOf("rushing water", "screaming", "impact", "pinned"), described)
+        // Bit 7 is no longer reserved: it is the structural-crack channel, which the
+        // projection has always weighted but the byte never reported.
+        assertEquals(
+            listOf("rushing water", "screaming", "structural crack", "impact", "pinned"),
+            described,
+        )
         assertEquals("0x8f", SensoryFlags.toHex(flags))
     }
 }
