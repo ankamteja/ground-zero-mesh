@@ -46,6 +46,25 @@ android {
     }
 }
 
+// Runs the real L3 GatewayServer headless on the laptop (see GwHeadless.kt). Two uses:
+//   ./gradlew :app:runHeadlessGateway -PgwArgs="--sim"          emulation: a simulated mesh
+//   ./gradlew :app:runHeadlessGateway -PgwArgs="localhost 7802" relay bridge onto :core:runRelay
+tasks.register<JavaExec>("runHeadlessGateway") {
+    group = "application"
+    description = "Serve the responder dashboard headless (args via -PgwArgs, default '--sim')"
+    dependsOn("compileDebugKotlin", ":core:jar")
+    workingDir = rootProject.projectDir
+    mainClass.set("org.groundzero.mesh.app.gateway.GwHeadlessKt")
+    val runtimeJars = configurations.getByName("debugRuntimeClasspath")
+        .filter { it.name.endsWith(".jar") && (it.name.contains("nanohttpd") || it.name.contains("kotlin-stdlib") || it.name.contains("annotations")) }
+    classpath = files(
+        layout.buildDirectory.dir("tmp/kotlin-classes/debug"),
+        project(":core").tasks.getByName("jar").outputs.files,
+        runtimeJars,
+    )
+    args = (project.findProperty("gwArgs") as String?)?.split(" ") ?: listOf("--sim")
+}
+
 dependencies {
     implementation(project(":core"))
 

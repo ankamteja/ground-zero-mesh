@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "mkdir -p web/dist && cp app/src/main/assets/dashboard/index.html app/src/main/assets/dashboard/fixtures.json web/web-config.js web/dist/",
+  "outputDirectory": "web/dist",
+  "cleanUrls": true,
+  "framework": null
+}

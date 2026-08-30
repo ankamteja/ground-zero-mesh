@@ -4,6 +4,9 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ground-Zero Mesh</title>
+<link rel="icon" href="data:," />
+<script src="/web-config.js"></script>
+
 <style>
   :root {
     --bg: #f3f5f6; --panel: #ffffff; --line: #dde2e5; --text: #14181c; --dim: #5b646c;
@@ -43,6 +46,17 @@
     background: color-mix(in srgb, var(--entrap) 16%, var(--panel)); border-bottom: 1px solid var(--line);
   }
   .preview-banner em { font-style: normal; color: var(--entrap); font-weight: 600; }
+
+  .sim-controls {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+    font-size: 12px; color: var(--dim);
+  }
+  .sim-controls button {
+    font: inherit; font-size: 12px; color: var(--text); background: transparent;
+    border: 1px solid var(--line); padding: 6px 12px; cursor: pointer; min-height: 32px;
+  }
+  .sim-controls button:hover { border-color: var(--accent); color: var(--accent); }
 
   main {
     display: grid; grid-template-columns: minmax(0, 1fr) 380px;
@@ -149,13 +163,23 @@
   <div class="spacer"></div>
   <div class="status"><span class="dot" id="dot" aria-hidden="true"></span><span id="conn" role="status" aria-live="polite" aria-atomic="true">connecting…</span></div>
   <div class="status" id="updated">—</div>
+  <button class="toggle" id="srcBtn" hidden>emulation</button>
   <button class="toggle" id="themeBtn">light</button>
 </header>
 
 <div id="previewBanner" class="preview-banner" role="status" hidden>
-  <strong>Sample data</strong> — no gateway phone is connected, so this is what the board looks
-  like with example incidents. Join the gateway's Wi-Fi hotspot to see live reports; actions
-  like <em>found / safe</em> are turned off until then.
+  <span id="previewBannerText"><strong>Sample data</strong> — no gateway phone is connected, so this is what the board
+  looks like with example incidents. Join the gateway's Wi-Fi hotspot to see live reports; actions
+  like <em>found / safe</em> are turned off until then.</span>
+</div>
+
+<div id="simControls" class="sim-controls" hidden>
+  <span>emulation &mdash; raise an SOS from a simulated node:</span>
+  <button type="button" data-v="A">SOS &middot; 1 hop</button>
+  <button type="button" data-v="B">SOS &middot; 2 hops</button>
+  <button type="button" data-v="C">SOS &middot; 3 hops</button>
+  <button type="button" id="simClear">clear board</button>
+  <span id="simMsg"></span>
 </div>
 
 <main>
@@ -246,6 +270,99 @@
     syncThemeBtn();
   };
 
+  // ---- source: this gateway (self) vs. the other one (emulation <-> live) ----
+  // GwHeadless --sim injects window.__SIM__ on its page, so "self" there IS the emulation
+  // and the toggle offers the live phone board. On a real phone's dashboard __SIM__ is
+  // unset, "self" is the live board, and the toggle offers the laptop emulation.
+  // __WEBSIM__ (set by web-config.js on the Vercel deploy) is the serverless variant of
+  // __SIM__: same emulation, but the board comes from /api/snapshot, SOS/clear are tracked
+  // in this list, and there is no SSE stream and no live-phone side to toggle to.
+  var IS_WEBSIM = !!window.__WEBSIM__;
+  var webSos = [];
+  var IS_SIM_PAGE = !!window.__SIM__ || IS_WEBSIM;
+  var OTHER_BASE, SELF_NAME, OTHER_NAME;
+  if (IS_SIM_PAGE) {
+    SELF_NAME = "emulation"; OTHER_NAME = "live";
+    OTHER_BASE = "http://localhost:8081";
+  } else {
+    SELF_NAME = "live"; OTHER_NAME = "emulation";
+    OTHER_BASE = "http://localhost:8080";
+  }
+  try {
+    var savedBase = localStorage.getItem("gzm-other-base");
+    if (savedBase) OTHER_BASE = savedBase;
+  } catch (e) {}
+  // Always open on "self": the emulation page on its own emulation, a phone's dashboard on
+  // its own live board. The toggle still works within the session; it just doesn't persist,
+  // so a fresh load never lands on a source that may be gone (a phone board after the demo).
+  var srcMode = "self"; // "self" | "other"
+  function base() { return srcMode === "self" ? "" : OTHER_BASE; }
+  function syncSrcBtn() {
+    var b = $("srcBtn");
+    // No live-phone side on the Vercel deploy — nothing to toggle to.
+    b.hidden = IS_WEBSIM;
+    b.textContent = "view: " + (srcMode === "self" ? SELF_NAME : OTHER_NAME); // what you're looking at
+    b.title = "click to switch to " + (srcMode === "self" ? OTHER_NAME : SELF_NAME);
+    var sc = $("simControls");
+    if (sc) sc.hidden = !(IS_SIM_PAGE && srcMode === "self");
+  }
+
+  // emulation control API (GwHeadless --sim serves it on the dashboard port + 10)
+  var SIM_CTRL = location.protocol + "//" + location.hostname + ":" +
+    ((parseInt(location.port, 10) || 80) + 10);
+  function simPost(path, label) {
+    var m = $("simMsg"); if (m) m.textContent = "…";
+    fetch(SIM_CTRL + path, { method: "POST" })
+      .then(function (r) { return r.text(); })
+      .then(function (t) { if (m) m.textContent = t; })
+      .catch(function () { if (m) m.textContent = "control API unreachable on " + SIM_CTRL; });
+  }
+  function webPoll() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    startPolling();
+  }
+  (function wireSimControls() {
+    var sc = $("simControls"); if (!sc) return;
+    var bs = sc.querySelectorAll("button[data-v]");
+    for (var i = 0; i < bs.length; i++) {
+      (function (btn) {
+        btn.onclick = function () {
+          var v = btn.getAttribute("data-v");
+          if (IS_WEBSIM) { webSos.push(v); var m = $("simMsg"); if (m) m.textContent = "sos raised from " + v; webPoll(); }
+          else simPost("/sos?v=" + v);
+        };
+      })(bs[i]);
+    }
+    var c = $("simClear");
+    if (c) c.onclick = function () {
+      if (IS_WEBSIM) { webSos = []; var m = $("simMsg"); if (m) m.textContent = "board cleared"; webPoll(); }
+      else simPost("/clear");
+    };
+  })();
+
+  syncSrcBtn();
+  $("srcBtn").onclick = function () {
+    srcMode = srcMode === "self" ? "other" : "self";
+    syncSrcBtn();
+    reconnect();
+  };
+  // What the status line calls a working connection — "emulation" on the sim's own page,
+  // "live" when this page is pointed at a real phone gateway. The dot stays green either way.
+  function connName() {
+    if (IS_WEBSIM) return "emulation";
+    return (IS_SIM_PAGE && srcMode === "self") ? "emulation" : "live";
+  }
+  function reconnect() {
+    if (es) { try { es.close(); } catch (e) {} es = null; }
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    usingFixtures = false; lastGood = 0; selectedKey = null;
+    // Blank the board immediately so the switch is visible even if the new source is down —
+    // otherwise the previous source's incidents just sit there and it looks like nothing changed.
+    render({});
+    setConn("", "switching to " + (srcMode === "self" ? SELF_NAME : OTHER_NAME) + "…");
+    connect();
+  }
+
   // ---- connection ----
   function setConn(state, text) {
     $("dot").className = "dot" + (state ? " " + state : "");
@@ -253,10 +370,11 @@
   }
 
   function connect() {
+    if (IS_WEBSIM) { startPolling(); return; }   // serverless: no SSE, /api/snapshot only
     if (typeof EventSource !== "undefined") {
       try {
-        es = new EventSource("/events");
-        es.onopen = function () { setConn("live", "live (stream)"); };
+        es = new EventSource(base() + "/events");
+        es.onopen = function () { setConn("live", connName() + " (stream)"); };
         es.onmessage = function (ev) { ingest(ev.data); };
         es.onerror = function () {
           setConn("down", "stream lost — polling");
@@ -272,13 +390,18 @@
   function startPolling() {
     if (pollTimer) return;
     var tick = function () {
-      fetch("/snapshot", { cache: "no-store" })
+      var url = IS_WEBSIM
+        ? "/api/snapshot?sos=" + encodeURIComponent(webSos.join(","))
+        : base() + "/snapshot";
+      fetch(url, { cache: "no-store" })
         .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
-        .then(function (t) { setConn("live", "live (poll)"); ingest(t); })
+        .then(function (t) { setConn("live", connName() + " (poll)"); ingest(t); })
         .catch(function () {
+          if (IS_WEBSIM) { setConn("down", "emulation API not responding"); return; }
+          if (IS_SIM_PAGE && srcMode === "self") { setConn("down", "emulation gateway not responding"); return; }
           if (usingFixtures) { setConn("", "sample data — retrying gateway"); return; }
           setConn("down", "no gateway connection");
-          if (Date.now() - lastGood > 8000) tryFixtures();
+          if (!IS_SIM_PAGE && Date.now() - lastGood > 8000) tryFixtures();
         });
     };
     tick();
@@ -317,7 +440,24 @@
 
     $("advice").textContent = payload.advice || "—";
     $("updated").textContent = "updated " + new Date().toLocaleTimeString();
-    $("previewBanner").hidden = !usingFixtures;
+    var emulationView = IS_SIM_PAGE && srcMode === "self";
+    if (emulationView) {
+      $("previewBannerText").innerHTML = IS_WEBSIM
+        ? "<strong>Emulation</strong> — a simulated mesh: three victims on chains of one, " +
+          "two and three hops to the gateway. Hop counts and evidence tier are the real " +
+          "propagation logic; the nodes are simulated and there are no phones here. " +
+          "Raise an SOS with the buttons above."
+        : "<strong>Emulation</strong> — a simulated mesh running on the laptop, no phones " +
+          "involved: three victims, three relays, one gateway. The board, hop counts and " +
+          "corroboration are real; the nodes are not. Click <em>live</em> above for the phone board.";
+      $("previewBanner").hidden = false;
+    } else {
+      $("previewBannerText").innerHTML = "<strong>Sample data</strong> — no gateway phone is " +
+        "connected, so this is what the board looks like with example incidents. Join the " +
+        "gateway's Wi-Fi hotspot to see live reports; actions like <em>found / safe</em> are " +
+        "turned off until then.";
+      $("previewBanner").hidden = !usingFixtures;
+    }
 
     renderPerimeter();
     renderBoard();
