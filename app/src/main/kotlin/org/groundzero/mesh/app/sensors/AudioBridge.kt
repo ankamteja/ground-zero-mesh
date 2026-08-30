@@ -117,16 +117,32 @@ class AudioBridge(context: Context) {
         Log.i(TAG, "microphone up at $SAMPLE_RATE_HZ Hz")
     }
 
+    /**
+     * Stop listening, in the one order that is safe.
+     *
+     * [Thread.interrupt] does not unblock [AudioRecord.read] — it is a native call and
+     * ignores the interrupt flag — so the reader can still be inside `read()` when this
+     * returns. Releasing the record out from under it is a use-after-free on the native
+     * object. `stop()` is what actually makes a blocked read return, so the order has to be
+     * stop the record, wait briefly for the loop to fall out, and only then release.
+     *
+     * The join is bounded: a reader that has not returned within [STOP_JOIN_MS] is not worth
+     * blocking a role switch for, and it will exit on its own the moment its read completes.
+     */
     fun stop() {
         if (!running) return
         running = false
-        thread?.interrupt()
-        thread = null
-        recorder?.let {
-            runCatching { it.stop() }
-            runCatching { it.release() }
-        }
+
+        val record = recorder
         recorder = null
+        runCatching { record?.stop() }
+
+        val reader = thread
+        thread = null
+        reader?.interrupt()
+        runCatching { reader?.join(STOP_JOIN_MS) }
+
+        runCatching { record?.release() }
         // A stopped microphone asserts nothing. Leaving the last reading in place would let a
         // relay-role phone keep reporting audio it is no longer listening for.
         latest = AudioObservation.SILENT
@@ -195,6 +211,9 @@ class AudioBridge(context: Context) {
         const val WINDOW_SAMPLES = AudioFeatures.MAX_FFT
 
         private const val BYTES_PER_SAMPLE = 2
+
+        /** How long stop() waits for the reader to fall out of a blocked read. */
+        private const val STOP_JOIN_MS = 250L
         private val CHANNEL = AudioFormat.CHANNEL_IN_MONO
         private val ENCODING = AudioFormat.ENCODING_PCM_16BIT
 

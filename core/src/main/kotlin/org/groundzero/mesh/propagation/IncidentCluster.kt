@@ -121,6 +121,16 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
                 } else {
                     existing.severity
                 },
+                // A zone entered after the first broadcast used to be dropped on the floor:
+                // `zone` was simply absent from this copy, so whatever the very first
+                // envelope carried — almost always Envelope.UNSET_ZONE, since nobody types a
+                // zone before pressing SOS — was frozen for the life of the incident. The
+                // Stage 3 enrichment reuses the same dedup key by design, so it lands here as
+                // an update, and its zone was the one field the update could not change.
+                //
+                // Same rule the summary and the GPS fix already use: an informative value
+                // wins, and an uninformative one never blanks what is already held.
+                zone = if (Envelope.isZoneKnown(envelope.addressZone)) envelope.addressZone else existing.zone,
                 dangerScore = maxOf(existing.dangerScore, envelope.dangerScore),
                 tier = strongest(existing.tier, envelope.effectiveTier),
                 corroborators = existing.corroborators + setOfNotNull(from),
