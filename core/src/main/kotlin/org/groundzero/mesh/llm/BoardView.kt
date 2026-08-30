@@ -4,6 +4,7 @@ import org.groundzero.mesh.agent.SensoryFlags
 import org.groundzero.mesh.gateway.RankedIncident
 import org.groundzero.mesh.gateway.TwinNode
 import org.groundzero.mesh.gateway.TwinSnapshot
+import org.groundzero.mesh.propagation.Envelope
 
 /**
  * One board row, as the advisor sees it.
@@ -131,7 +132,7 @@ data class BoardView(
                 BoardIncident(
                     clusterId = Json.str(c, "clusterId").orEmpty(),
                     origin = Json.str(c, "origin").orEmpty(),
-                    zone = Json.str(c, "zone").orEmpty().ifBlank { "unset" },
+                    zone = Json.str(c, "zone").orEmpty().ifBlank { Envelope.UNSET_ZONE },
                     severity = Json.str(c, "severity").orEmpty(),
                     tier = Json.str(c, "effectiveTier").orEmpty(),
                     standing = Json.str(c, "standing").orEmpty(),

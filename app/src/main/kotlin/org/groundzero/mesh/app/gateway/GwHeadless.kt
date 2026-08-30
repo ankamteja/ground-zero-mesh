@@ -5,6 +5,7 @@ import org.groundzero.mesh.agent.NodeAgent
 import org.groundzero.mesh.gateway.ResponderRanking
 import org.groundzero.mesh.propagation.Codecs
 import org.groundzero.mesh.propagation.DedupCluster
+import org.groundzero.mesh.propagation.Envelope
 import org.groundzero.mesh.propagation.Gossip
 import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.propagation.Severity
@@ -152,7 +153,7 @@ private class SimMesh {
             NodeAgent(
                 nodeId = id,
                 saltFingerprint = "0".repeat(32),
-                addressZone = "unset",
+                addressZone = Envelope.UNSET_ZONE,
                 transport = net.transportFor(id).also { it.start() },
                 clockMs = clock,
             )

@@ -71,6 +71,19 @@
     <uses-permission
         android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"
         tools:targetApi="upside_down_cake" />
+    <!--
+      The same rule, for the same reason, applied to GPS. Since Android 10 an app only gets
+      location while it is "in use", and a foreground service counts as in-use *only* if its
+      type includes `location`. This service exists precisely to keep running with the screen
+      off, so without this the SOS silently carries no coordinate the moment the app is no
+      longer in front — the code path runs, the listener is registered, and no fix ever
+      arrives. 14+ additionally requires this typed permission. The type is applied per-launch
+      in MeshForegroundService.foregroundServiceTypes(), not unconditionally: on 14+ promoting
+      with a `location` type the user has not granted throws, and GPS is optional here.
+    -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_LOCATION"
+        tools:targetApi="upside_down_cake" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
@@ -91,7 +104,7 @@
         <service
             android:name=".service.MeshForegroundService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice|microphone" />
+            android:foregroundServiceType="connectedDevice|microphone|location" />
 
     </application>
 </manifest>

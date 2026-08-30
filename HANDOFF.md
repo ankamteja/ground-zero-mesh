@@ -1,7 +1,7 @@
 # Handoff — where things stand (2026-08-30, evening)
 
 Written fresh, replacing the earlier version of this file — everything it tracked is now
-either landed or superseded below. `main` is at `d07bea4`. `./gradlew test` (236 tests
+either landed or superseded below. `main` is at `d07bea4`. `./gradlew test` (373 tests
 across `core` + `app`) and `:app:assembleDebug` are both green in this environment (which
 now has an Android SDK — several things below were build-verified here for the first time).
 
@@ -57,9 +57,20 @@ GPS stays optional), `VictimScreen`'s own grant UI, `AndroidManifest.xml`'s
 fix" Inspector row with a `geo:` link, `fixtures.json` sample data covering both a present
 fix and an honest null.
 
-**Not yet exercised on a real phone with a real GPS fix** — the code compiles and
-`core`/`app` unit tests are green, but nobody has pressed SOS with location services on and
-watched a coordinate land on the board yet.
+**Then it was tried on a real phone and no fix ever arrived** — for a reason that was never
+in the Kotlin. The service declared `foregroundServiceType="connectedDevice|microphone"`, and
+since Android 10 a foreground service only keeps receiving location if its type includes
+`location`. This service exists to run with the screen off, so the platform silently stopped
+delivering fixes the moment the app was no longer in front. Fixed by adding the `location`
+type and `FOREGROUND_SERVICE_LOCATION`, and — because on 14+ promoting with a type whose
+permission is missing throws and would kill the service — by computing the type mask at
+runtime in `MeshForegroundService.enterForeground()` from what is actually granted, with
+`onStartCommand` re-promoting so a later grant widens the mask. Two smaller repairs in
+`GpsBridge`: it no longer bails out (unrecoverably) when the GPS provider happens to be off
+at start, and it seeds from `getLastKnownLocation` when that fix is under two minutes old, so
+the first coordinate does not have to wait a full GPS time-to-first-fix. Full reasoning in
+`docs/architecture.md`. **Still unwatched on hardware** — the diagnosis is from the platform
+contract, not from a coordinate seen landing on the board.
 
 ### A laptop as the mesh relay over TCP, for when a third phone isn't on hand
 
@@ -90,7 +101,7 @@ does.
    fixed by moving the registration into `LanRelayTransport`'s own `init`, unconditional and
    one-time.
 
-`./gradlew test` (both modules, 236 tests) and `:app:assembleDebug` are green as of this
+`./gradlew test` (both modules, 373 tests) and `:app:assembleDebug` are green as of this
 write-up — the first time either has been verified in an environment with the Android SDK.
 **Still not run on two real phones and a real laptop over a real network.** Runbook is in
 `README.md`'s "Two phones and a laptop relay" section:
@@ -112,8 +123,10 @@ write-up — the first time either has been verified in an environment with the 
 - **The actual 3-phone (or 2-phone-plus-laptop) field run itself** — everything above is
   build- and unit-verified; the live multi-device runs that would close out `TODO.md`'s
   Phase 2/6 VERIFY lines haven't happened yet.
-- **GPS with a real fix on a real phone** — code path is there, nobody has watched a real
-  coordinate arrive.
+- **GPS with a real fix on a real phone** — the foreground-service-type bug that would have
+  blocked this is fixed (see above), but nobody has watched a real coordinate arrive yet.
+  Note `:app` cannot be compiled in the current environment (no Android SDK), so the app-side
+  change is reviewed but not built.
 - **The laptop-relay path on a real network** — same: code compiles and unit-tests clean,
   no live two-phone-through-a-laptop run yet.
 - **Gateway hotspot still can't be opened programmatically** — a responder opens it by hand

@@ -133,7 +133,8 @@ is and is not verified.
 
 ## What's real vs. simulated right now
 
-Every layer above is implemented and unit-tested (`core` alone is 150+ tests). What has
+Every layer above is implemented and unit-tested (`core` alone is 299 tests, 373 across both
+modules). What has
 **not** been run is the actual three-phone field test: no Android hardware is attached to
 the development machine, and Nearby Connections cannot run between emulators (no real BT /
 Wi-Fi Direct radios). `MeshFieldSimulationTest` stands in for it over a simulated network and

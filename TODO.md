@@ -13,7 +13,8 @@ Tick items in the same PR that does the work.
 - [x] `[A]` `EnvelopeCodec` / `JsonCodec` / `CompactCodec` / `Codecs.forFrameBudget`
 - [x] `[A]` `Transport` seam + `SimNetwork` / `SimTransport` (virtual clock, adjacency, latency, loss)
 - [x] `[A]` `DangerScore` (EMA + two thresholds) / `ScoreExplanation` / `AgentState` / `SosInput`
-- [x] `[AB]` `./gradlew :core:test` green (150 tests in `core`, 196 across `core` + `app` as of PR #17 — grows with every phase, re-check before trusting this number)
+- [x] `[AB]` `./gradlew :core:test` green (299 tests in `core`, 373 across `core` + `app` as of
+      2026-08-30 — grows with every phase, re-check before trusting this number)
 
 > Note: this baseline was seeded by [B] from the handover so the `app/` module has
 > something to compile against. Types match the handover signatures verbatim. [A] owns

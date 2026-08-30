@@ -137,6 +137,19 @@ data class Envelope(
 
     companion object {
         const val MAX_ADDRESS_ZONE_CHARS = 24
+
+        /**
+         * The zone tag a node sends when nobody has entered one.
+         *
+         * A sentinel rather than an empty string because it has to survive a round trip
+         * through both codecs and be readable on a board. [isZoneKnown] is the one place
+         * that decides what it means, so no downstream layer has to know the literal.
+         */
+        const val UNSET_ZONE = "unset"
+
+        /** Whether a zone tag carries any location information at all. */
+        fun isZoneKnown(zone: String): Boolean =
+            zone.isNotBlank() && !zone.equals(UNSET_ZONE, ignoreCase = true)
         const val MAX_SLM_SUMMARY_BYTES = 50
         const val MAX_VIEWS = 4
         const val MAX_VIEW_BYTES = 120

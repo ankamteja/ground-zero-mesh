@@ -26,14 +26,27 @@ class StoreAndForward(
         return digest.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
     }
 
-    /** Buffer a frame for [zoneId]. [dedupKey] is the envelope's — a repeat replaces in place. */
+    /**
+     * Buffer a frame for [zoneId]. [dedupKey] is the envelope's — a repeat replaces in place.
+     *
+     * The insert happens inside [ConcurrentHashMap.compute] rather than after a `getOrPut`,
+     * because [sweep] removes buckets that have gone empty. Between fetching a bucket and
+     * adding to it, a sweep on another thread could see it empty and drop it from the map —
+     * and the frame would then be added to a list nothing holds any more. A buffered report
+     * that silently never replays is the exact failure this class exists to prevent, and it
+     * would only ever happen under the load of a real reconnection.
+     */
     fun offer(zoneId: String, dedupKey: String, frame: ByteArray) {
         val key = bucketKey(zoneId)
-        val list = buckets.getOrPut(key) { mutableListOf() }
-        synchronized(list) {
-            list.removeAll { it.dedupKey == dedupKey || it.expiresAt <= clock() }
-            list.add(Entry(dedupKey, frame.copyOf(), clock() + ttlMs))
-            while (list.size > maxPerBucket) list.removeAt(0)
+        val now = clock()
+        buckets.compute(key) { _, existing ->
+            val list = existing ?: mutableListOf()
+            synchronized(list) {
+                list.removeAll { it.dedupKey == dedupKey || it.expiresAt <= now }
+                list.add(Entry(dedupKey, frame.copyOf(), now + ttlMs))
+                while (list.size > maxPerBucket) list.removeAt(0)
+            }
+            list
         }
     }
 
@@ -64,10 +77,24 @@ class StoreAndForward(
         }
     }
 
+    /**
+     * Drop expired frames, and drop a bucket once it holds nothing.
+     *
+     * Expiry and removal happen in one [ConcurrentHashMap.computeIfPresent] per key so that
+     * a concurrent [offer] for the same bucket either runs entirely before the removal or
+     * entirely after it. Sweeping and then removing in two passes let an offer land in the
+     * gap between them.
+     */
     fun sweep() {
         val now = clock()
-        buckets.values.forEach { list -> synchronized(list) { list.removeAll { it.expiresAt <= now } } }
-        buckets.entries.removeAll { (_, list) -> synchronized(list) { list.isEmpty() } }
+        for (key in buckets.keys) {
+            buckets.computeIfPresent(key) { _, list ->
+                synchronized(list) {
+                    list.removeAll { it.expiresAt <= now }
+                    if (list.isEmpty()) null else list
+                }
+            }
+        }
     }
 
     companion object {
