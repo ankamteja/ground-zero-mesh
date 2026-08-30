@@ -19,4 +19,4 @@ docs/planning/
 *.local.md
 
 # TcpRelayMain's persisted node id — machine-local, one per laptop that runs the relay
-.relay-node-id
+.relay-node-id*
