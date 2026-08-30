@@ -91,6 +91,38 @@
 
   .advice { margin: 0; color: var(--text); font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; }
 
+  /* Advisor panel. Same tokens as everything else — it is one more panel on this board,
+     not a chat window bolted onto it. The answer slot keeps a reserved height so a reply
+     arriving does not shove the board down the page mid-read. */
+  .adv-state { color: var(--dim); font-size: 11.5px; display: flex; align-items: baseline; gap: 6px; }
+  .adv-state .dot { position: relative; top: -1px; }
+  .adv-answer {
+    margin: 8px 0 0; min-height: 34px; color: var(--text); font-size: 12.5px; line-height: 1.55;
+    white-space: pre-wrap; border-left: 2px solid var(--accent); padding-left: 9px;
+  }
+  /* A deterministic fallback must not look like a model answer — different edge colour,
+     and the state line says so in words as well. */
+  .adv-answer.fallback { border-left-color: var(--entrap); }
+  .adv-answer.empty { border-left-color: var(--line); color: var(--dim); }
+  .adv-sources { margin-top: 6px; color: var(--dim); font-size: 11px; line-height: 1.5; }
+  .adv-sources b { font-weight: 400; color: var(--text); }
+  .adv-ask { display: flex; gap: 6px; margin-top: 9px; }
+  .adv-ask input {
+    flex: 1; min-width: 0; font: inherit; font-size: 12px; color: var(--text);
+    background: transparent; border: 1px solid var(--line); padding: 7px 8px; min-height: 32px;
+  }
+  .adv-ask input:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  .adv-ask button {
+    font: inherit; font-size: 12px; color: var(--text); background: transparent;
+    border: 1px solid var(--line); padding: 6px 11px; cursor: pointer; min-height: 32px; flex: none;
+  }
+  .adv-ask button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .adv-ask button:disabled, .adv-ask input:disabled { opacity: 0.5; cursor: default; }
+  .adv-hint { margin-top: 8px; color: var(--dim); font-size: 11px; line-height: 1.55; }
+  .adv-hint code {
+    font: inherit; background: color-mix(in srgb, var(--dim) 14%, transparent); padding: 1px 4px;
+  }
+
   .perimeter { display: flex; flex-wrap: wrap; gap: 6px; }
   .zonechip {
     display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid var(--line); font-size: 11.5px;
@@ -202,6 +234,23 @@
       <p class="advice" id="advice">&mdash;</p>
     </section>
 
+    <section id="advisorPanel">
+      <h2>Advisor <span class="tag">local model &middot; cannot reorder the board</span></h2>
+      <div class="adv-state">
+        <span class="dot" id="advDot" aria-hidden="true"></span>
+        <span id="advState" role="status" aria-live="polite" aria-atomic="true">looking for a local advisor&hellip;</span>
+      </div>
+      <p class="adv-answer empty" id="advAnswer">Ask a question, or press <em>brief</em> for a read of the board as it stands.</p>
+      <div class="adv-sources" id="advSources" hidden></div>
+      <form class="adv-ask" id="advForm" autocomplete="off">
+        <input type="text" id="advQ" placeholder="ask about this board&hellip;"
+               aria-label="Ask the advisor a question about this board" maxlength="300" />
+        <button type="submit" id="advAsk">ask</button>
+        <button type="button" id="advBrief">brief</button>
+      </form>
+      <div class="adv-hint" id="advHint" hidden></div>
+    </section>
+
     <section>
       <h2>Perimeter</h2>
       <div class="perimeter" id="perimeter"></div>
@@ -247,6 +296,10 @@
   var es = null, pollTimer = null, lastGood = 0, usingFixtures = false;
   var payload = { advice: "", flagBits: [], slotNames: [], clusters: [], links: [], self: null };
   var selectedKey = null;
+  // The last snapshot as received, kept whole. The advisor is asked about the board on this
+  // screen, so it is sent this object rather than fetching its own — otherwise a responder
+  // can be reading one board while the answer describes a slightly newer one.
+  var lastSnapshot = null;
 
   function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -299,8 +352,14 @@
   function base() { return srcMode === "self" ? "" : OTHER_BASE; }
   function syncSrcBtn() {
     var b = $("srcBtn");
-    // No live-phone side on the Vercel deploy — nothing to toggle to.
-    b.hidden = IS_WEBSIM;
+    // Hidden on a real gateway's own board, and on the Vercel deploy.
+    //
+    // The toggle only ever made sense in one direction: from the laptop emulation, where
+    // pointing at a real phone is a useful thing to do. On the board a gateway phone is
+    // actually serving, an "emulation" source is a way to be looking at invented incidents
+    // while believing they came off the mesh — the exact confusion a responder cannot
+    // afford. A live board has one source: this gateway.
+    b.hidden = IS_WEBSIM || !IS_SIM_PAGE;
     b.textContent = "view: " + (srcMode === "self" ? SELF_NAME : OTHER_NAME); // what you're looking at
     b.title = "click to switch to " + (srcMode === "self" ? OTHER_NAME : SELF_NAME);
     var sc = $("simControls");
@@ -414,6 +473,7 @@
       .then(function (j) {
         usingFixtures = true;
         setConn("", "sample data — no gateway connected");
+        lastSnapshot = j;
         render(j);
       })
       .catch(function () {});
@@ -424,6 +484,7 @@
     try { data = JSON.parse(text); } catch (e) { return; }
     usingFixtures = false;
     lastGood = Date.now();
+    lastSnapshot = data;
     render(data);
   }
 
@@ -590,6 +651,151 @@
         $("foundStatus").textContent = "Could not reach the gateway — tap to retry.";
       });
   }
+
+  // ---- advisor: a local model with retrieval, on the responder's own laptop ----
+  //
+  // Everything above this line works with no advisor at all, and that is the point. This
+  // panel talks to a separate process on the laptop (`./gradlew :core:runAdvisor`), which
+  // holds the model and the rescue corpus. It is cross-origin by nature: this page is
+  // served by the gateway phone, the advisor listens on the laptop's loopback.
+  //
+  // It is handed the board and returns text. It has no route back into the ranking — see
+  // core's BoardView — so nothing it says can move a row.
+  var ADVISOR_BASE = "http://localhost:8787";
+  try {
+    var savedAdvisor = localStorage.getItem("gzm-advisor-base");
+    if (savedAdvisor) ADVISOR_BASE = savedAdvisor;
+  } catch (e) {}
+
+  var advBusy = false, advTimer = null, advModel = null;
+
+  function advSet(state, text) {
+    $("advDot").className = "dot" + (state ? " " + state : "");
+    $("advState").textContent = text;
+  }
+
+  function advEnable(on) {
+    $("advAsk").disabled = !on;
+    $("advBrief").disabled = !on;
+    $("advQ").disabled = !on;
+  }
+
+  function advHint(html) {
+    var el = $("advHint");
+    if (!html) { el.hidden = true; el.innerHTML = ""; return; }
+    el.innerHTML = html;
+    el.hidden = false;
+  }
+
+  function advStopTimer() {
+    if (advTimer) { clearInterval(advTimer); advTimer = null; }
+  }
+
+  function advProbe() {
+    fetch(ADVISOR_BASE + "/health", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (h) {
+        if (!h.ollamaUp || !h.model) {
+          advModel = null;
+          advSet("down", "advisor running, no model");
+          advHint("Its model server is not up. Run <code>ollama serve</code> on the laptop.");
+          advEnable(false);
+          return;
+        }
+        advModel = h.model;
+        advSet("live", h.model + " · " + h.passages + " reference passages");
+        advHint("");
+        advEnable(true);
+      })
+      .catch(function () {
+        advModel = null;
+        advSet("", "no local advisor");
+        advEnable(false);
+        advHint(IS_WEBSIM
+          ? "The advisor runs on a responder's own laptop, beside the model. It is not part of this public deploy."
+          : "Optional — the board is complete without it. On the laptop: <code>ollama serve</code>, " +
+            "then <code>./gradlew :core:runAdvisor</code>.");
+      });
+  }
+
+  // A local 8B answers in seconds, not milliseconds, so the wait is counted out loud
+  // rather than hidden behind a spinner — the responder can see it is working and decide
+  // whether to keep waiting or just read the board.
+  function advRequest(question) {
+    if (advBusy) return;
+    if (!lastSnapshot) { advSet("down", "no board to ask about yet"); return; }
+    advBusy = true;
+    advEnable(false);
+    advStopTimer();
+
+    var verb = question ? "thinking" : "briefing";
+    var startedAt = Date.now();
+    var answer = $("advAnswer");
+    answer.className = "adv-answer empty";
+    answer.textContent = "…";
+    $("advSources").hidden = true;
+    advHint("");
+    advSet("live", verb + "… 0s");
+    advTimer = setInterval(function () {
+      advSet("live", verb + "… " + Math.round((Date.now() - startedAt) / 1000) + "s");
+    }, 1000);
+
+    fetch(ADVISOR_BASE + "/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: question || "", snapshot: lastSnapshot })
+    })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (a) { advRender(a); })
+      .catch(function () {
+        advStopTimer();
+        advBusy = false;
+        advSet("down", "advisor did not answer");
+        var el = $("advAnswer");
+        el.className = "adv-answer empty";
+        el.textContent = "No answer — the advisor is unreachable, or its model failed. " +
+          "The board and the Advisory line above are unaffected.";
+        advEnable(true);
+      });
+  }
+
+  function advRender(a) {
+    advStopTimer();
+    advBusy = false;
+    var el = $("advAnswer");
+    el.textContent = a.answer || "(the model returned nothing)";
+    // A deterministic fallback must never be mistaken for a model's answer: different edge
+    // colour, and the state line says it in words too.
+    el.className = "adv-answer" + (a.grounded ? "" : " fallback");
+    if (a.grounded) {
+      advSet("live", (a.model || "model") + " · " + Math.round((a.tookMs || 0) / 1000) + "s");
+    } else {
+      advSet("down", "no model answered — deterministic brief");
+    }
+    var src = $("advSources");
+    if (a.sources && a.sources.length) {
+      src.innerHTML = "<b>sources</b> " + a.sources.map(esc).join(" &middot; ");
+      src.hidden = false;
+    } else {
+      src.hidden = true;
+    }
+    advHint(a.note ? esc(a.note) : "");
+    advEnable(true);
+  }
+
+  (function wireAdvisor() {
+    advEnable(false);
+    $("advForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var q = $("advQ").value.trim();
+      if (q) advRequest(q);
+    });
+    $("advBrief").addEventListener("click", function () { advRequest(null); });
+    advProbe();
+    // Started after the dashboard was already open, which is the usual order — the panel
+    // picks it up on its own rather than needing a reload.
+    setInterval(function () { if (!advBusy && !advModel) advProbe(); }, 20000);
+  })();
 
   function select(key) {
     selectedKey = key;
