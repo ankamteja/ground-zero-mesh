@@ -41,6 +41,13 @@
   button.toggle:hover { border-color: var(--accent); color: var(--accent); }
   button:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
 
+  /* A `display` of our own outranks the browser's own `[hidden] { display: none }`, so
+     anything below that sets one and is also toggled by the `hidden` attribute needs this.
+     `.sim-controls` did not have it, and so a *live* gateway board showed the "raise a
+     simulated SOS" bar it explicitly hides -- see syncSrcBtn on why that is the one thing
+     a responder board must never offer. */
+  [hidden] { display: none !important; }
+
   .preview-banner {
     padding: 9px 16px; font-size: 12px; line-height: 1.5; color: var(--text);
     background: color-mix(in srgb, var(--entrap) 16%, var(--panel)); border-bottom: 1px solid var(--line);
