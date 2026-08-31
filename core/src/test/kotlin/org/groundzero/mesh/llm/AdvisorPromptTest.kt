@@ -27,6 +27,7 @@ class AdvisorPromptTest {
         placed = true,
         gpsLat = null,
         gpsLon = null,
+        gpsSource = null,
     )
     private val unplaced = top.copy(
         clusterId = "778899aabbcc@3",
@@ -64,10 +65,26 @@ class AdvisorPromptTest {
     }
 
     @Test
-    fun `an absent GPS is stated as none rather than omitted`() {
-        assertTrue(AdvisorPrompt.facts(board).contains("gps=none"))
-        val withFix = board.copy(incidents = listOf(top.copy(gpsLat = 12.97, gpsLon = 77.59)))
-        assertTrue(AdvisorPrompt.facts(withFix).contains("gps=12.97,77.59"))
+    fun `an absent position is stated as none rather than omitted`() {
+        assertTrue(AdvisorPrompt.facts(board).contains("position=none"))
+        val withFix = board.copy(
+            incidents = listOf(top.copy(gpsLat = 12.97, gpsLon = 77.59, gpsSource = "SATELLITE")),
+        )
+        assertTrue(AdvisorPrompt.facts(withFix).contains("position=12.97,77.59 (satellite fix)"))
+    }
+
+    /**
+     * The model has to be able to tell a responder that a position is the person's own
+     * estimate. A bare enum name in the facts would invite it to report a guess as a fix.
+     */
+    @Test
+    fun `a self-reported position is spelled out as the person's own estimate`() {
+        val marked = board.copy(
+            incidents = listOf(top.copy(gpsLat = 12.97, gpsLon = 77.59, gpsSource = "SELF_REPORTED")),
+        )
+        val facts = AdvisorPrompt.facts(marked)
+        assertTrue(facts.contains("marked by the person themselves"), facts)
+        assertTrue(facts.contains("may be wrong"), facts)
     }
 
     @Test

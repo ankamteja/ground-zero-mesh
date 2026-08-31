@@ -45,13 +45,16 @@ data class IncidentCluster(
      */
     val reportCount: Int = 1,
     /**
-     * A real GPS fix, when the origin device had one at broadcast time. Both null or both
-     * set. Never a fallback or an estimate — see [Envelope.gpsLat]. A later report's fix
-     * (Stage 3 often has a better one than Stage 0) replaces this; a later report with none
-     * never blanks a fix already held, same rule as [slmSummary].
+     * The best position held for this incident, with [gpsSource] saying what kind it is.
+     * All three null or all three set.
+     *
+     * A later report's fix (Stage 3 often has a better one than Stage 0) replaces this, and a
+     * later report with none never blanks one already held — the same rule as [slmSummary].
+     * The one addition is that kind outranks recency: see [betterFix].
      */
     val gpsLat: Float? = null,
     val gpsLon: Float? = null,
+    val gpsSource: FixSource? = null,
 ) {
     /** Independent relayers beyond the first. Zero means single-sourced. */
     val corroborationCount: Int get() = maxOf(0, corroborators.size - 1)
@@ -111,8 +114,10 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
                 firstHandHeld = isFirstHand,
                 gpsLat = envelope.gpsLat,
                 gpsLon = envelope.gpsLon,
+                gpsSource = envelope.gpsSource,
             )
         } else {
+            val fix = betterFix(existing, envelope)
             existing.copy(
                 // Severity is the person's own statement of how fast they die. Take the
                 // most urgent ever reported and never walk it back on a later, calmer relay.
@@ -132,8 +137,9 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
                 featureVector = envelope.featureVector ?: existing.featureVector,
                 firstHandHeld = existing.firstHandHeld || isFirstHand,
                 reportCount = existing.reportCount + 1,
-                gpsLat = envelope.gpsLat ?: existing.gpsLat,
-                gpsLon = envelope.gpsLon ?: existing.gpsLon,
+                gpsLat = fix.lat,
+                gpsLon = fix.lon,
+                gpsSource = fix.source,
             )
         }
 
@@ -175,4 +181,29 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
 
     private fun strongest(a: EpistemologyTier, b: EpistemologyTier): EpistemologyTier =
         if (a.ordinal <= b.ordinal) a else b
+
+    /** A position and what kind it is, kept together so the three can never drift apart. */
+    private data class Fix(val lat: Float?, val lon: Float?, val source: FixSource?)
+
+    /**
+     * Which of the two positions the cluster should keep.
+     *
+     * Newer normally wins, because a later report is usually a better-settled fix. The one
+     * exception is kind: a [FixSource.SELF_REPORTED] tap never displaces a
+     * [FixSource.SATELLITE] lock, however recent it is. A phone that got a fix outdoors and
+     * was then carried inside still knows where it was to within metres, which beats the
+     * owner's estimate of where "inside" is — and the failure this prevents is the expensive
+     * one: a measured location silently replaced by a guess, on a board whose whole claim is
+     * that you can tell those apart.
+     *
+     * Satellite replacing satellite, or self-report replacing self-report, both take the
+     * newer. Neither kind is ever blanked by a report carrying no position at all.
+     */
+    private fun betterFix(existing: IncidentCluster, envelope: Envelope): Fix {
+        val held = Fix(existing.gpsLat, existing.gpsLon, existing.gpsSource)
+        val arriving = Fix(envelope.gpsLat, envelope.gpsLon, envelope.gpsSource)
+        if (arriving.source == null) return held
+        if (held.source == FixSource.SATELLITE && arriving.source == FixSource.SELF_REPORTED) return held
+        return arriving
+    }
 }

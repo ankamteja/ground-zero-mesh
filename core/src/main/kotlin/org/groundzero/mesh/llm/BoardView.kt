@@ -37,6 +37,8 @@ data class BoardIncident(
     val placed: Boolean,
     val gpsLat: Double?,
     val gpsLon: Double?,
+    /** "SATELLITE", "SELF_REPORTED", or null when there is no coordinate at all. */
+    val gpsSource: String?,
 )
 
 /**
@@ -149,6 +151,7 @@ data class BoardView(
                     placed = Json.bool(c, "placed") ?: false,
                     gpsLat = Json.num(c, "gpsLat"),
                     gpsLon = Json.num(c, "gpsLon"),
+                    gpsSource = Json.str(c, "gpsSource"),
                 )
             }
             val carriers = Json.asList(root["links"])
@@ -195,6 +198,7 @@ data class BoardView(
                     placed = node?.placed ?: false,
                     gpsLat = c.gpsLat?.toDouble(),
                     gpsLon = c.gpsLon?.toDouble(),
+                    gpsSource = c.gpsSource?.name,
                 )
             }
             return BoardView(

@@ -54,12 +54,18 @@ object ClusterJson {
         // for "how far away" that a mesh with no GPS/RSSI ranging actually has. See the
         // localisation entry in TODO.md's open assumptions.
         num("minHops", c.minHops.toString()); append(',')
-        // A real device GPS fix, when the sender had one — never a fallback or an estimate,
-        // and distinct from both the hop-count proxy above and the schematic `position`
-        // below. Null (not omitted) when absent, matching `recommendedActionRank`'s and
-        // `floor`'s own null-vs-fake convention just below.
+        // A position for this incident, when there is one — distinct from both the hop-count
+        // proxy above and the schematic `position` below. Null (not omitted) when absent,
+        // matching `recommendedActionRank`'s and `floor`'s own null-vs-fake convention just
+        // below.
+        //
+        // `gpsSource` is not decoration: a satellite fix is a measurement and a self-reported
+        // one is the person's own estimate of where they are, and a responder deciding where
+        // to send a team must be able to tell those apart. Anything rendering these two
+        // numbers is expected to render this too.
         num("gpsLat", c.gpsLat?.let { gps(it) } ?: "null"); append(',')
         num("gpsLon", c.gpsLon?.let { gps(it) } ?: "null"); append(',')
+        num("gpsSource", c.gpsSource?.let { "\"${it.name}\"" } ?: "null"); append(',')
         // index+1 while inside the dispatch budget; null past it — still listed, not prioritised.
         num("recommendedActionRank", if (r.withinBudget) (index + 1).toString() else "null"); append(',')
         num("priority", trim(r.priority)); append(',')

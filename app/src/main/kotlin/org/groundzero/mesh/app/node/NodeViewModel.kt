@@ -25,6 +25,8 @@ class NodeViewModel(
     private val raiseOnMesh: (Severity) -> Envelope? = MeshStack::raiseSos,
     private val applyRole: (MeshRole) -> Unit = MeshStack::setRole,
     initialRole: () -> MeshRole = MeshStack::currentRole,
+    private val applySelfPosition: (lat: Float?, lon: Float?, zone: String?) -> Unit =
+        MeshStack::updateSelfReportedPosition,
 ) : ViewModel() {
 
     /**
@@ -60,6 +62,44 @@ class NodeViewModel(
     }
 
     fun selectSeverity(next: Severity) { selectedSeverity = next }
+
+    /**
+     * Where the person marked themselves on the site plan, in plan space, plus the zone that
+     * point fell in. Null until someone answers — never a default, never a centre-of-map
+     * guess, because an unanswered question must not leave this phone looking answered.
+     */
+    var selfMark by mutableStateOf<SelfPositionStore.Mark?>(null)
+        private set
+
+    /**
+     * Record a tap on the plan.
+     *
+     * The coordinate reaches the mesh stack immediately rather than waiting for the SOS: a
+     * person may mark themselves and then be unable to press anything, and the heartbeat this
+     * node is already sending will carry the position out on its own.
+     */
+    fun markSelfPosition(plan: SitePlan, planX: Float, planY: Float) {
+        val clampedX = planX.coerceIn(0f, plan.width)
+        val clampedY = planY.coerceIn(0f, plan.height)
+        val zone = plan.zoneAt(clampedX, clampedY)?.name.orEmpty()
+        selfMark = SelfPositionStore.Mark(clampedX, clampedY, zone)
+        val (lat, lon) = plan.georeference.toLatLon(clampedX, clampedY)
+        // A tap on open ground still yields a position; it just names no zone, and the zone
+        // is left alone rather than blanked, since "not in a listed building" is not the same
+        // as "no longer wherever they last said".
+        applySelfPosition(lat.toFloat(), lon.toFloat(), zone.takeIf { it.isNotBlank() })
+    }
+
+    /** Seeds the marker from what was stored, so a restart shows what the person answered. */
+    fun restoreSelfPosition(mark: SelfPositionStore.Mark?) {
+        selfMark = mark
+    }
+
+    /** Take the mark back. The SOS then carries no self-reported position at all. */
+    fun clearSelfPosition() {
+        selfMark = null
+        applySelfPosition(null, null, null)
+    }
 
     /**
      * Raise an SOS. Pressing the button is itself a strong "something is wrong" signal, so

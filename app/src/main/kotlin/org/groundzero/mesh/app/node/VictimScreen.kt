@@ -17,12 +17,14 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -76,10 +78,48 @@ fun VictimScreen(vm: NodeViewModel, modifier: Modifier = Modifier) {
             )
         }
 
+        val context = LocalContext.current
+
+        // The map. Shown only when a plan is actually bundled — see SitePlanLoader — because
+        // an empty frame where a map should be is worse than no map at all for someone
+        // deciding what this screen wants from them.
+        val plan = remember { SitePlanLoader.load(context) }
+        if (plan != null) {
+            LaunchedEffect(Unit) { vm.restoreSelfPosition(SelfPositionStore.get(context)) }
+
+            HorizontalDivider()
+            Label("Where are you")
+            Text(
+                vm.selfMark?.let { mark ->
+                    if (mark.zone.isNotBlank()) "Marked: ${mark.zone} — tap again to correct it"
+                    else "Marked — tap again to correct it"
+                } ?: "Tap the building you are in. This is sent as your own estimate, not a GPS fix.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            SitePlanPicker(
+                plan = plan,
+                selected = vm.selfMark?.let { Offset(it.planX, it.planY) },
+                onPick = { x, y ->
+                    vm.markSelfPosition(plan, x, y)
+                    // Persisted here rather than in the view model so the model stays a plain
+                    // JVM test subject with no Context.
+                    vm.selfMark?.let { SelfPositionStore.set(context, it) }
+                },
+            )
+            if (vm.selfMark != null) {
+                TextButton(onClick = {
+                    vm.clearSelfPosition()
+                    SelfPositionStore.clear(context)
+                }) {
+                    Text("Remove my mark")
+                }
+            }
+            HorizontalDivider()
+        }
+
         // Separate from the Nearby permission grant on purpose — see MeshPermissions.
         // LOCATION_PERMISSION. Nothing about sending an SOS should ever depend on this;
         // it only decides whether the SOS carries a coordinate alongside it.
-        val context = LocalContext.current
         var locationGranted by remember { mutableStateOf(MeshPermissions.locationGranted(context)) }
         val locationRequester = rememberLauncherForActivityResult(
             ActivityResultContracts.RequestPermission()

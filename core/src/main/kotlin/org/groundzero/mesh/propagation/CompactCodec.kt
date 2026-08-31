@@ -20,7 +20,7 @@ import java.io.ByteArrayOutputStream
  *  35   1     hops
  *  36   1     ttl
  *  37   1     sensory flags (see SensoryFlags)
- *  38   1     gps header: 0x00 = absent, 0x01 = present
+ *  38   1     gps header: 0x00 = absent, 0x01 = satellite fix, 0x02 = self-reported
  *  ..   8     gpsLat + gpsLon, two f32 big-endian (absent when header is 0x00)
  *  ..   1     addressZone length n
  *  ..   n     addressZone, UTF-8
@@ -38,14 +38,33 @@ object CompactCodec : EnvelopeCodec {
 
     override val name: String = "compact"
 
-    /** 0x03 added the optional GPS block. 0x02 added the flag byte and v_SLM. Nothing
-     *  still on the mesh speaks 0x01. */
-    private const val VERSION: Int = 0x03
+    /**
+     * 0x04 gave the GPS header a third value so a coordinate says where it came from; it
+     * spends no extra bytes, because the header byte was already there with only two values
+     * in use. 0x03 added the optional GPS block. 0x02 added the flag byte and v_SLM. Nothing
+     * still on the mesh speaks 0x01.
+     */
+    private const val VERSION: Int = 0x04
+
+    /**
+     * Versions this decoder accepts. Reading 0x03 keeps an updated gateway able to hear
+     * phones that have not been updated — which is the direction that matters, since the
+     * gateway is the one machine an operation can realistically reflash mid-deployment. Every
+     * coordinate in a 0x03 frame is a satellite fix by construction: self-reported positions
+     * did not exist when that format was written.
+     *
+     * The other direction needs nothing: an old node meeting a 0x04 frame fails the version
+     * check and raises [EnvelopeDecodeException] rather than misreading the header byte and
+     * walking off into the variable-length tail.
+     */
+    private val SUPPORTED_VERSIONS: Set<Int> = setOf(0x03, 0x04)
+
     private const val SLM_NULL: Int = 0xFF
     private const val VECTOR_ABSENT: Int = 0x00
     private const val VECTOR_PRESENT: Int = 0x01
     private const val GPS_ABSENT: Int = 0x00
-    private const val GPS_PRESENT: Int = 0x01
+    private const val GPS_SATELLITE: Int = 0x01
+    private const val GPS_SELF_REPORTED: Int = 0x02
     private const val SCORE_SCALE: Double = 10_000.0
     private const val SLOT_SCALE: Double = 255.0
 
@@ -123,7 +142,12 @@ object CompactCodec : EnvelopeCodec {
         if (envelope.gpsLat == null) {
             out.write(GPS_ABSENT)
         } else {
-            out.write(GPS_PRESENT)
+            out.write(
+                when (envelope.gpsSource!!) {  // non-null whenever gpsLat is; Envelope requires it
+                    FixSource.SATELLITE -> GPS_SATELLITE
+                    FixSource.SELF_REPORTED -> GPS_SELF_REPORTED
+                },
+            )
             out.writeF32(envelope.gpsLat)
             out.writeF32(envelope.gpsLon!!)
         }
@@ -165,7 +189,7 @@ object CompactCodec : EnvelopeCodec {
         try {
             val r = Reader(bytes)
             val version = r.u8()
-            require(version == VERSION) { "unknown compact version $version" }
+            require(version in SUPPORTED_VERSIONS) { "unknown compact version $version" }
             val nodeId = NodeId(r.u48())
             val salt = bytesToHex(r.bytes(16))
             val tier = EpistemologyTier.entries[r.u8()]
@@ -175,9 +199,16 @@ object CompactCodec : EnvelopeCodec {
             val hops = r.u8()
             val ttl = r.u8()
             val flags = r.u8().toByte()
-            val hasGps = r.u8() == GPS_PRESENT
-            val gpsLat = if (hasGps) r.f32() else null
-            val gpsLon = if (hasGps) r.f32() else null
+            // An unrecognised non-zero header would leave the reader mid-coordinate with no
+            // way to know it, so anything but the three known values is a corrupt frame.
+            val gpsSource = when (val header = r.u8()) {
+                GPS_ABSENT -> null
+                GPS_SATELLITE -> FixSource.SATELLITE
+                GPS_SELF_REPORTED -> FixSource.SELF_REPORTED
+                else -> throw IllegalArgumentException("unknown gps header 0x%02x".format(header))
+            }
+            val gpsLat = if (gpsSource != null) r.f32() else null
+            val gpsLon = if (gpsSource != null) r.f32() else null
             val zone = String(r.bytes(r.u8()), Charsets.UTF_8)
             val slmHeader = r.u8()
             val slm = if (slmHeader == SLM_NULL) null else String(r.bytes(slmHeader), Charsets.UTF_8)
@@ -209,6 +240,7 @@ object CompactCodec : EnvelopeCodec {
                 ttl = ttl,
                 gpsLat = gpsLat,
                 gpsLon = gpsLon,
+                gpsSource = gpsSource,
             )
         } catch (e: Exception) {
             throw EnvelopeDecodeException("compact decode failed: ${e.message}", e)

@@ -3,6 +3,7 @@ package org.groundzero.mesh.agent
 import org.groundzero.mesh.propagation.Codecs
 import org.groundzero.mesh.propagation.Envelope
 import org.groundzero.mesh.propagation.EpistemologyTier
+import org.groundzero.mesh.propagation.FixSource
 import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.propagation.Severity
 import org.groundzero.mesh.transport.Transport
@@ -80,12 +81,20 @@ class NodeAgent(
         private set
 
     /**
-     * The most recent GPS fix, if the platform ever handed one to [updateGpsFix]. Read
+     * The most recent satellite fix, if the platform ever handed one to [updateGpsFix]. Read
      * into whatever envelope is built next — [raiseSos] never waits on it. Null on a
      * device with no signal (indoors, underground, no permission) for the whole run, which
      * is the honest, expected state, not an error.
      */
     var lastGpsFix: GpsFix? = null
+        private set
+
+    /**
+     * Where the person said they are, if they marked themselves on the map. Kept apart from
+     * [lastGpsFix] rather than folded into it, so neither can ever be mistaken for the other
+     * at the point where the envelope is built.
+     */
+    var selfReportedFix: GpsFix? = null
         private set
 
     data class GpsFix(val lat: Float, val lon: Float)
@@ -95,6 +104,45 @@ class NodeAgent(
     fun updateGpsFix(lat: Float, lon: Float) {
         lastGpsFix = GpsFix(lat, lon)
     }
+
+    /**
+     * The victim screen calls this when someone marks their position on the map. Null clears
+     * it, for a person who changes their mind rather than being made to commit to a guess.
+     */
+    fun updateSelfReportedFix(lat: Float?, lon: Float?) {
+        selfReportedFix = if (lat == null || lon == null) null else GpsFix(lat, lon)
+    }
+
+    /**
+     * Set the zone this node reports itself in — normally the site-plan zone the person
+     * tapped.
+     *
+     * Truncated rather than rejected. [Envelope]'s constructor would throw on an over-long
+     * zone, and the throw would land inside [raiseSos] at the moment somebody pressed the
+     * button; a clipped zone name still points a search at the right building, and no
+     * plausible name reaches 24 characters anyway. [SitePlan] already rejects over-long names
+     * when the plan is loaded, so this is the second line, not the first.
+     */
+    fun updateAddressZone(zone: String) {
+        addressZone = zone.trim().take(Envelope.MAX_ADDRESS_ZONE_CHARS)
+    }
+
+    /**
+     * The position an envelope should carry, and what kind it is.
+     *
+     * A satellite fix wins whenever there is one. It is accurate to metres and is nobody's
+     * opinion, and even an older one is usually worth more to a search than an estimate —
+     * a phone that had a lock at the entrance and lost it inside still marks the right
+     * building, which a mistaken tap may not.
+     *
+     * Known limit, worth stating rather than hiding: nothing here ages a fix out. A satellite
+     * position taken hours ago still outranks a tap made now. That is the wrong answer for
+     * someone who has moved a long way since, and fixing it needs fix timestamps on the wire,
+     * which this format does not carry yet.
+     */
+    private fun positionForBroadcast(): Pair<GpsFix, FixSource>? =
+        lastGpsFix?.let { it to FixSource.SATELLITE }
+            ?: selfReportedFix?.let { it to FixSource.SELF_REPORTED }
 
     /** Every envelope this agent put on the wire, newest last. Useful for the debug view. */
     val emitted = ArrayList<Envelope>()
@@ -325,24 +373,30 @@ class NodeAgent(
         slmSummary: String? = null,
         featureVector: SlmFeatureVector? = null,
         views: List<String> = emptyList(),
-    ) = Envelope(
-        nodeId = nodeId,
-        saltFingerprint = saltFingerprint,
-        addressZone = addressZone,
-        tier = tier,
-        severity = severity,
-        dangerScore = score.coerceIn(0.0, 1.0),
-        timestamp = timestampSeconds,
-        slmSummary = slmSummary,
-        flags = currentFlags(),
-        featureVector = featureVector,
-        views = views.take(Envelope.MAX_VIEWS),
-        peers = transport.knownPeers().take(Envelope.MAX_PEERS),
-        hops = 0,
-        ttl = ttl,
-        gpsLat = lastGpsFix?.lat,
-        gpsLon = lastGpsFix?.lon,
-    )
+    ): Envelope {
+        // Resolved once: the two sources must not be re-picked per field, or a fix arriving
+        // mid-construction could label one kind of coordinate as the other.
+        val position = positionForBroadcast()
+        return Envelope(
+            nodeId = nodeId,
+            saltFingerprint = saltFingerprint,
+            addressZone = addressZone,
+            tier = tier,
+            severity = severity,
+            dangerScore = score.coerceIn(0.0, 1.0),
+            timestamp = timestampSeconds,
+            slmSummary = slmSummary,
+            flags = currentFlags(),
+            featureVector = featureVector,
+            views = views.take(Envelope.MAX_VIEWS),
+            peers = transport.knownPeers().take(Envelope.MAX_PEERS),
+            hops = 0,
+            ttl = ttl,
+            gpsLat = position?.first?.lat,
+            gpsLon = position?.first?.lon,
+            gpsSource = position?.second,
+        )
+    }
 
     private fun emit(envelope: Envelope): Envelope {
         transport.send(codec.encode(envelope))

@@ -22,6 +22,8 @@ import org.groundzero.mesh.app.transport.RadioTransport
 import org.groundzero.mesh.app.node.MeshRole
 import org.groundzero.mesh.app.node.RelayHostStore
 import org.groundzero.mesh.app.node.RoleStore
+import org.groundzero.mesh.app.node.SelfPositionStore
+import org.groundzero.mesh.app.node.SitePlanLoader
 import org.groundzero.mesh.app.sensors.AudioBridge
 import org.groundzero.mesh.app.sensors.GpsBridge
 import org.groundzero.mesh.app.sensors.SensorBridge
@@ -95,12 +97,15 @@ class MeshForegroundService : Service() {
 
         val clock = { System.currentTimeMillis() }
         val gossip = Gossip(radio, clockMs = clock)
+        // The zone the person last marked on the site plan, if they ever did. Still
+        // UNSET_ZONE otherwise — the one thing that must not happen here is a zone nobody
+        // chose, which would read on the dashboard as a located casualty.
+        val markedZone = SelfPositionStore.get(this)?.zone?.takeIf { it.isNotBlank() }
+
         val agent = NodeAgent(
             nodeId = localId,
             saltFingerprint = NodeIdStore.saltFingerprint(localId),
-            // TODO: a responder-entered zone. Localisation is not solved, and a fabricated
-            // coordinate here would read as solved on the dashboard.
-            addressZone = UNSET_ZONE,
+            addressZone = markedZone ?: UNSET_ZONE,
             transport = GossipOriginTransport(radio, gossip) { envelope, frame ->
                 storeAndForward.offer(envelope.addressZone, envelope.dedupKey, frame)
             },
@@ -117,6 +122,22 @@ class MeshForegroundService : Service() {
         audio = microphone
         sensors = SensorBridge(this, handler) { microphone.latest }
         gps = GpsBridge(this) { lat, lon -> MeshStack.updateGpsFix(lat, lon) }
+
+        // Put a previously marked position back on the agent. The mark is stored in plan
+        // space, so it is converted here through whatever georeference the *current* plan
+        // carries — a deployment that corrects its reference corners moves every stored mark
+        // with it, instead of leaving old coordinates quietly wrong.
+        SelfPositionStore.get(this)?.let { mark ->
+            val plan = SitePlanLoader.load(this)
+            if (plan == null) {
+                // The plan that produced this mark is gone, so plan space no longer means
+                // anything and the mark cannot honestly be converted.
+                Log.w(TAG, "a marked position is stored but no site plan is bundled — ignoring it")
+            } else {
+                val (lat, lon) = plan.georeference.toLatLon(mark.planX, mark.planY)
+                MeshStack.updateSelfReportedPosition(lat.toFloat(), lon.toFloat(), mark.zone)
+            }
+        }
         // Restore the role the responder had picked before this instance existed — MeshStack
         // otherwise comes up as NODE regardless of what the (possibly still-running) UI shows.
         MeshStack.setRole(RoleStore.get(this))

@@ -55,17 +55,28 @@ data class Envelope(
     /** <= 15. */
     val ttl: Int = 15,
     /**
-     * A GPS fix taken at broadcast time, when one was available. Both null or both set —
-     * never partial.
+     * A position taken at broadcast time, when one was available. Both null or both set —
+     * never partial, and always accompanied by [gpsSource] saying where it came from.
      *
      * Deliberately not required and not waited for: GPS fails exactly where a victim most
      * needs the mesh — indoors, underground, under rubble — and Stage 0 is synchronous, no
-     * waiting on anything before the SOS goes out. When present this is a real fix, never a
-     * fallback or an estimate; the zone tag / hop count remain the honest proxy for anyone
-     * without one. See the localisation entry in `TODO.md`'s open assumptions.
+     * waiting on anything before the SOS goes out. A satellite fix here is a real fix, never
+     * a fallback or an estimate; when there is none, the victim may still have marked
+     * themselves on a map, and that answer arrives here too — labelled
+     * [FixSource.SELF_REPORTED], never silently blended with the measured kind. The zone tag
+     * and hop count remain the honest proxy for anyone with neither.
      */
     val gpsLat: Float? = null,
     val gpsLon: Float? = null,
+    /**
+     * Where [gpsLat] came from. Null exactly when there is no coordinate.
+     *
+     * Not defaulted to [FixSource.SATELLITE] on purpose. A default would let a caller attach
+     * a guessed position and have it read as measured simply by forgetting a parameter, and
+     * the whole point of this field is that the two can never be confused. Supplying a
+     * coordinate means saying where it came from.
+     */
+    val gpsSource: FixSource? = null,
 ) {
     init {
         require(saltFingerprint.length == 32 && saltFingerprint.all { it.isHexChar() }) {
@@ -89,6 +100,12 @@ data class Envelope(
         require(hops in 0..MAX_HOPS) { "hops must be 0..$MAX_HOPS, got $hops" }
         require(ttl in 0..MAX_TTL) { "ttl must be 0..$MAX_TTL, got $ttl" }
         require((gpsLat == null) == (gpsLon == null)) { "gpsLat and gpsLon must both be null or both be set" }
+        // An unlabelled coordinate is the failure this field exists to prevent, and a label
+        // with nothing under it is a claim about a position nobody sent. Both are caught here
+        // rather than at the far end, where the only remaining option is to guess.
+        require((gpsLat == null) == (gpsSource == null)) {
+            "a coordinate must say where it came from: gpsLat=$gpsLat but gpsSource=$gpsSource"
+        }
         gpsLat?.let { require(it in -90f..90f) { "gpsLat must be -90..90, got $it" } }
         gpsLon?.let { require(it in -180f..180f) { "gpsLon must be -180..180, got $it" } }
 

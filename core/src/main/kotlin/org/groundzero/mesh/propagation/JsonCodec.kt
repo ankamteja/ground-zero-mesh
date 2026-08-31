@@ -37,7 +37,9 @@ object JsonCodec : EnvelopeCodec {
         rawField("hops", envelope.hops.toString()); append(',')
         rawField("ttl", envelope.ttl.toString()); append(',')
         rawField("gpsLat", envelope.gpsLat?.toString() ?: "null"); append(',')
-        rawField("gpsLon", envelope.gpsLon?.toString() ?: "null")
+        rawField("gpsLon", envelope.gpsLon?.toString() ?: "null"); append(',')
+        if (envelope.gpsSource == null) rawField("gpsSource", "null")
+        else field("gpsSource", envelope.gpsSource.name)
         append('}')
     }.toByteArray(Charsets.UTF_8)
 
@@ -62,6 +64,13 @@ object JsonCodec : EnvelopeCodec {
                 ttl = obj.num("ttl").toInt(),
                 gpsLat = obj.numOrNull("gpsLat")?.toFloat(),
                 gpsLon = obj.numOrNull("gpsLon")?.toFloat(),
+                // Absent on a phone that predates provenance, where a coordinate could only
+                // ever have been a satellite fix — the same reading CompactCodec gives a
+                // 0x03 frame. A *present* coordinate with no source is the one case that
+                // must not silently become SATELLITE, and Envelope's own require() is what
+                // catches a null here against a non-null lat.
+                gpsSource = obj.strOrNull("gpsSource")?.let { FixSource.valueOf(it) }
+                    ?: obj.numOrNull("gpsLat")?.let { FixSource.SATELLITE },
             )
         } catch (e: Exception) {
             throw EnvelopeDecodeException("json decode failed: ${e.message}", e)

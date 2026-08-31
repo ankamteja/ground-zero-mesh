@@ -4,6 +4,7 @@ import org.groundzero.mesh.agent.SlmFeatureVector
 import org.groundzero.mesh.gateway.DigitalTwin
 import org.groundzero.mesh.gateway.ResponderRanking
 import org.groundzero.mesh.propagation.EpistemologyTier
+import org.groundzero.mesh.propagation.FixSource
 import org.groundzero.mesh.propagation.IncidentCluster
 import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.propagation.Severity
@@ -55,6 +56,7 @@ class ClusterJsonTest {
         reportCount = reportCount,
         gpsLat = gpsLat,
         gpsLon = gpsLon,
+        gpsSource = gpsLat?.let { FixSource.SATELLITE },
     )
 
     private fun json(

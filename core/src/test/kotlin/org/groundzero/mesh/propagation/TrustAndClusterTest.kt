@@ -137,6 +137,9 @@ class DedupClusterTest {
         hops = hops,
         gpsLat = gpsLat,
         gpsLon = gpsLon,
+        // These predate provenance and all describe device fixes, which is what a
+        // coordinate meant before there was another kind.
+        gpsSource = gpsLat?.let { FixSource.SATELLITE },
     )
 
     @Test

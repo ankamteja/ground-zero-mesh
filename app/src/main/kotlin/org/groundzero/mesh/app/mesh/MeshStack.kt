@@ -197,6 +197,21 @@ object MeshStack {
         Unit
     }
 
+    /**
+     * A position the person marked on the site plan, and the zone it fell in. Null clears
+     * both.
+     *
+     * Kept separate from [updateGpsFix] all the way down — see
+     * [org.groundzero.mesh.propagation.FixSource]. The zone rides along because a tap answers
+     * both questions at once, and splitting them here would let a phone report a position from
+     * one part of the site and a zone name from another.
+     */
+    fun updateSelfReportedPosition(lat: Float?, lon: Float?, zone: String?) = synchronized(lock) {
+        agent?.updateSelfReportedFix(lat, lon)
+        zone?.let { agent?.updateAddressZone(it) }
+        Unit
+    }
+
     /** Stage 3: hand the window's evidence to the agent for the enriched re-broadcast. */
     fun completeSensoryWindow(window: SensoryWindow): Envelope? = synchronized(lock) {
         agent?.completeSensoryWindow(window)

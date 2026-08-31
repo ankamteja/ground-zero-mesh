@@ -156,9 +156,15 @@
   .incident .rank.out { color: var(--dim); font-weight: 400; }
   .incident .origin { font-weight: 600; }
   .incident .sev { margin-left: auto; font-size: 11px; color: var(--dim); }
-  .incident .meta { display: flex; justify-content: space-between; color: var(--dim); font-size: 11px; }
+  /* gap, because space-between leaves none once the two halves grow enough to meet — a long
+     zone name plus a "marked" badge ran them together as "block-a-north unplaced2 hops". */
+  .incident .meta { display: flex; justify-content: space-between; gap: 8px; color: var(--dim); font-size: 11px; }
   .unplaced-tag { color: var(--unplaced); }
   .gps-tag { color: var(--accent); font-weight: 600; }
+  /* Deliberately the "unplaced" warning colour rather than the GPS accent: a marked position
+     is a kind of not-knowing, and it should read alongside the other things this board is
+     honest about not knowing, not alongside its measurements. */
+  .self-tag { color: var(--unplaced); font-weight: 600; }
 
   .empty { color: var(--dim); }
 
@@ -576,7 +582,7 @@
           '<span>' + esc(c.zone) + (c.placed ? " · " + esc(c.floorLabel) : '') +
             (c.placed ? "" : ' <span class="unplaced-tag">unplaced</span>') + '</span>' +
           '<span>' + hopsLabel(c.minHops) + ' &middot; ' + c.flags +
-            (c.gpsLat != null ? ' <span class="gps-tag" title="a real GPS fix rode with this report">GPS</span>' : '') + '</span>' +
+            gpsBadge(c) + '</span>' +
         '</span>' +
       '</button>';
     }).join("");
@@ -831,11 +837,40 @@
    * signals this board can show are never read as one thing. `geo:` rather than a rendered
    * map: offline-safe, opens in whatever maps app the responder already has.
    */
+  /**
+   * The badge on a board row. Two different words rather than one badge for both: on the
+   * ranked list a responder is scanning, not reading, and "GPS" against a position somebody
+   * guessed is exactly the misreading this field was added to prevent.
+   */
+  function gpsBadge(c) {
+    if (c.gpsLat == null) return '';
+    if (c.gpsSource === "SELF_REPORTED") {
+      return ' <span class="self-tag" title="the person marked this themselves on the site plan — their estimate, not a satellite fix">marked</span>';
+    }
+    return ' <span class="gps-tag" title="a real satellite fix rode with this report">GPS</span>';
+  }
+
   function gpsRow(c) {
-    var value = (c.gpsLat != null && c.gpsLon != null)
-      ? '<a href="geo:' + c.gpsLat + ',' + c.gpsLon + '">' + c.gpsLat.toFixed(5) + ', ' + c.gpsLon.toFixed(5) + '</a>'
-      : '<span class="empty">none — indoors, no signal, or not granted</span>';
-    return '<div class="row"><span title="A real GPS fix taken on the reporting device, when one was available — never a fallback or an estimate, and separate from the schematic 3D position and the hop-count distance above.">GPS fix</span><span>' + value + '</span></div>';
+    if (c.gpsLat == null || c.gpsLon == null) {
+      return '<div class="row"><span title="A position for this incident, when there is one — separate from the schematic 3D position and the hop-count distance above.">Position</span>' +
+        '<span><span class="empty">none — indoors, no signal, or not granted</span></span></div>';
+    }
+    var link = '<a href="geo:' + c.gpsLat + ',' + c.gpsLon + '">' +
+      c.gpsLat.toFixed(5) + ', ' + c.gpsLon.toFixed(5) + '</a>';
+    // The label is the whole point of the row. A satellite fix is a measurement; a marked
+    // one is what the person believes, and a responder choosing where to send a team has to
+    // be able to tell those apart at a glance rather than by hovering.
+    var selfReported = c.gpsSource === "SELF_REPORTED";
+    // Kept to one short word: the label column is narrow, and "Marked by them" wrapped onto
+    // two lines and pushed the coordinate out of line with every other row.
+    var label = selfReported ? "Marked" : "GPS fix";
+    var help = selfReported
+      ? "The person marked this on the site plan themselves. It needs no satellites, and it can be sincerely wrong — treat it as testimony about a position, not a measurement."
+      : "A real satellite fix taken on the reporting device — never a fallback or an estimate.";
+    var note = selfReported
+      ? ' <span class="self-tag" title="' + help + '">self-reported</span>'
+      : '';
+    return '<div class="row"><span title="' + help + '">' + label + '</span><span>' + link + note + '</span></div>';
   }
   function esc(s) {
     return String(s).replace(/[&<>"]/g, function (c) {

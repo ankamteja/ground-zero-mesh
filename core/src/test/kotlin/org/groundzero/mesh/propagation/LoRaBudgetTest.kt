@@ -30,7 +30,7 @@ class LoRaBudgetTest {
             featureVector = SlmFeatureVector(FloatArray(SlmFeatureVector.LENGTH) { 0.5f }),
             views = (1..viewCount).map { "v".repeat(viewLen) },
             peers = (1..peers).map { NodeId(it.toLong()) },
-            hops = 3, ttl = 2, gpsLat = 12.97f, gpsLon = 77.59f,
+            hops = 3, ttl = 2, gpsLat = 12.97f, gpsLon = 77.59f, gpsSource = FixSource.SATELLITE,
         )
     } catch (e: IllegalArgumentException) { null }
 

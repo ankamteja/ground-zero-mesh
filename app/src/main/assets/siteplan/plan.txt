@@ -1,0 +1,31 @@
+# The site a deployment is working. Replace this whole file before you walk in:
+# the zone names here become Envelope.addressZone on the wire, and the two georef
+# corners are what turn a tap into a coordinate, so a plan from the wrong site
+# produces confident, wrong locations -- the exact failure the board is built to
+# avoid. See tools/field/README.md, "Fitting the site plan".
+#
+# Format:
+#   name    <free text>
+#   size    <width> <height>              plan units; any consistent scale
+#   georef  <x> <y> <lat> <lon>           exactly two, opposite corners
+#   zone    <name> <x> <y> <w> <h>        name <= 24 chars, no spaces
+#
+# Zone names are what a responder reads on the board at 3am. "block-a-north" is
+# worth more than "zone-1", and both cost the same number of bytes to send.
+
+name    Example site -- replace before deployment
+size    1000 800
+
+# Top-left and bottom-right of the plan, tied to the world. Latitude decreases
+# going down the page, which is what makes the interpolation come out right.
+georef  0    0    9.09350  76.49000
+georef  1000 800  9.09200  76.49150
+
+# The buildings. A person picks the one they are in; open ground between them is
+# a valid answer too -- a tap that hits no zone still yields a coordinate.
+zone    block-a-north    40   60   380  220
+zone    block-a-south    40   320  380  220
+zone    block-b-east     560  60   380  220
+zone    block-b-west     560  320  380  220
+zone    courtyard        420  180  120  440
+zone    car-park         40   600  900  140

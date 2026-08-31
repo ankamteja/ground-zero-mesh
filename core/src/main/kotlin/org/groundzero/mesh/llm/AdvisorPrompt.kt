@@ -92,8 +92,16 @@ Hard rules:
                 .append(" | danger=").append(round(i.dangerScore))
                 .append(" | priority=").append(round(i.priority))
                 .append(" | last heard ").append(i.lastSeenSecondsAgo).append("s ago")
-            sb.append(" | gps=").append(
-                if (i.gpsLat != null && i.gpsLon != null) "${i.gpsLat},${i.gpsLon}" else "none",
+            // Spelled out rather than left as an enum name: the model has to be able to say
+            // "they marked this themselves" to a responder, and a bare SELF_REPORTED invites
+            // it to read a person's guess as a measurement.
+            sb.append(" | position=").append(
+                when {
+                    i.gpsLat == null || i.gpsLon == null -> "none"
+                    i.gpsSource == "SELF_REPORTED" ->
+                        "${i.gpsLat},${i.gpsLon} (marked by the person themselves, not a satellite fix — may be wrong)"
+                    else -> "${i.gpsLat},${i.gpsLon} (satellite fix)"
+                },
             )
             sb.append('\n')
             sb.append("    evidence: ")
