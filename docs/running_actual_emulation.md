@@ -92,6 +92,13 @@ export FIELD_RELAY_PORT=7802
 
 Run everything from the repo root unless a step says otherwise.
 
+> **In a hurry, or running this in front of people?** `tools/field/demo.sh` does §3.4
+> through §3.7 in one command, in the right order, waiting on each port and naming the one
+> that did not come up. `demo.sh reset` gives you an empty board and a fresh SOS between
+> run-throughs, and `demo.sh down` hands the phone back its own role and node id. The rest
+> of this section is what it does, step by step, for when a step needs to be understood
+> rather than repeated — and §3.1–§3.3 (building and installing) still come first.
+
 ### 3.1 Build the APK
 
 ```bash
@@ -359,6 +366,27 @@ Two properties worth asserting deliberately, because both have broken before:
 - **`dropped=0`.** A climbing `dropped` on the relay means frames are arriving
   that it cannot forward.
 
+### The GPS coordinate, and when its absence is correct
+
+A row that reads `no GPS lock` indoors is the design working. `GpsBridge` asks for
+`GPS_PROVIDER` only and never `NETWORK_PROVIDER`, because a cell/Wi-Fi position can be
+kilometres out and `Envelope.gpsLat` is documented as a real fix or none — so a victim
+without a satellite lock sends no coordinate rather than a wrong one. Through a roof,
+that is usually the case.
+
+To see real coordinates, put the victim phone by a window or outside for a minute with
+the screen on and raise the SOS again; `gpsLat`/`gpsLon` fill in on their own.
+`demo.sh` prints which of the two situations you are in before it sends, so an empty
+coordinate is never a mystery mid-demo.
+
+Two things that surprise people:
+
+- **A coordinate does not place the incident.** Placement is `zone` and `floor`, which a
+  responder enters. A row can carry a real fix and still read `unplaced`.
+- **A fix is cached in the app process.** It survives whatever produced it going away, and
+  clears only on `am force-stop`. Worth knowing before you trust a coordinate you are no
+  longer feeding.
+
 ---
 
 ## 6. Tearing down
@@ -431,6 +459,7 @@ tools/field/responder.sh   attach / detach / install / status   (a real phone)
 tools/field/configure.sh   set role + relay host headlessly     (any phone)
 tools/field/sos.sh         raise an SOS through the real UI     (any phone)
 tools/field/mirror.sh      put the phones on screen for a demo  (scrcpy)
+tools/field/demo.sh        up / reset / down                    (the whole live demo)
 tools/field/netsimctl.py   place / walk / scenario / list / reset
 tools/field/setup.sh       venv + generated netsim gRPC stubs
 ```

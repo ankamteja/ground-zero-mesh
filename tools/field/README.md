@@ -96,6 +96,29 @@ This file is the design rationale; that one is the run-book.
 ./field.sh down
 ```
 
+### The whole demo in one command
+
+```bash
+./demo.sh                  # relay + victim phone + board + local model, then a real SOS
+./demo.sh reset            # empty board, fresh SOS, everything else left up
+./demo.sh down             # stop, and give the phone its own settings back
+```
+
+The ordering is what this buys you: the relay has to be listening before the phone is
+pointed at it, the `adb reverse` tunnel has to exist before the app starts, and the board
+has to be up before the advisor tries to read it. Each of those failing looks identical
+from the outside — an empty board — so every step waits on a port and names the one that
+did not come up.
+
+`reset` restarts only the gateway process. A live board has no "clear" button and should
+not: a responder must not be able to make real reports disappear. The board's contents
+*are* that process's gossip state, so restarting it is what an empty board means — while
+the relay, the phone's mesh identity and the loaded model all stay up, which is why it
+takes seconds rather than a fresh `up`.
+
+Nothing is injected. Every row comes from `sos.sh` tapping the app's real buttons, and the
+GPS coordinate is a real satellite fix or nothing at all — see below.
+
 ### Driving a phone that has no one to tap it
 
 A headless phone still has to be told what it is, and someone still has to press
@@ -117,6 +140,31 @@ relaunch after.
 `mirror.sh` puts those phones on screen (scrcpy, over adb, no reboot) when a run
 has to be *shown* rather than described. The field stays headless by default
 because that is what makes two phones fit on a 16 GB laptop.
+
+### GPS on the board: a real fix or nothing
+
+`GpsBridge` asks for `GPS_PROVIDER` and never `NETWORK_PROVIDER`, because a cell/Wi-Fi
+position can be kilometres out and `Envelope.gpsLat` is documented as a real fix or none.
+So an indoor demo shows **no coordinate**, and that is the design working, not a gap:
+
+```
+73f0-6cfd-eb34  DROWNING_IMMINENT  reports 2  hops 2  no GPS lock
+```
+
+Put the victim phone by a window or outside for a minute with the screen on and the same
+run fills in `gpsLat`/`gpsLon` by itself. `demo.sh` reports which of the two you are in
+before it raises the SOS, so an empty coordinate is never a mid-demo mystery.
+
+Android's test-provider interface *can* feed a fix to a phone indoors, and the value does
+travel the real path (`LocationManager` → `GpsBridge` → `MeshStack.updateGpsFix` → the
+envelope → the board). It is still not used here, and `demo.sh` will not do it: a demo that
+invents a position is demonstrating the one thing this design refuses to do. Worth knowing
+if you ever do try it — the fix is cached in the app process, so it survives removing the
+test provider and only clears on `am force-stop`.
+
+A coordinate does not *place* the incident on the 3D board either. Placement is `zone` and
+`floor`, which a responder enters; a row can carry real coordinates and still read
+`unplaced`.
 
 `sos.sh` is deliberately not a back door. It taps the real Compose buttons —
 found by label in a `uiautomator` dump, not by pixel — so the frame that reaches
@@ -220,5 +268,6 @@ responder.sh  attach / detach / install / status   (a real phone)
 configure.sh  role + relay host, headlessly        (any phone)
 sos.sh        raise an SOS through the real UI     (any phone)
 mirror.sh     put the phones on screen for a demo  (scrcpy)
+demo.sh       up / reset / down, the whole live demo in one command
 scenarios/    timelines a run can replay
 ```
