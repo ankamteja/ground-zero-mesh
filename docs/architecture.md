@@ -1234,3 +1234,180 @@ by. Each relay forwarded exactly once and each upstream relay suppressed exactly
 A genuine multi-hop board reading no longer needs three phones or an emulator. Two phones and
 a laptop running two chained relays produce a responder board showing `4 hops`, `SABDA`, and
 relayed corroboration — which is the evidence the dashboard was built to display.
+
+---
+
+## GPS on a real phone: the fix was never the code path, it was the service type (2026-08-30)
+
+The GPS-on-SOS feature landed complete and unit-tested, and then did nothing on a real
+handset. Nothing in the pipeline was wrong: `GpsBridge` registered its listener,
+`MeshStack.updateGpsFix` passed through, `NodeAgent.lastGpsFix` was read onto the envelope,
+and `CompactCodec` carried it. No fix ever arrived to travel through any of it.
+
+**The cause was `AndroidManifest.xml`, not Kotlin.** `MeshForegroundService` declared
+`android:foregroundServiceType="connectedDevice|microphone"`. Since Android 10 an app only
+receives location while it is "in use", and a foreground service counts as in-use for
+location *only if its type includes `location`*. This service exists specifically to keep the
+mesh alive with the screen off — so the moment the app stopped being the front app, which is
+the entire scenario, the platform stopped delivering fixes. Silently: no exception, no log,
+no permission denial. Exactly the failure shape the manifest's own Nearby comment warns about
+one block higher up.
+
+This is the same rule the microphone comment already documents for `RECORD_AUDIO`. It was
+written for the microphone and not generalised to GPS, which is why the gap survived review —
+the note was three lines above the bug it described.
+
+### Why the type is computed at runtime rather than just declared
+
+Adding `location` to the manifest is necessary but not sufficient, and doing only that would
+have traded a silent failure for a loud one. On Android 14+, `startForeground` with a
+`location` or `microphone` type whose runtime permission is **not** granted throws
+`SecurityException` and kills the service. Both permissions are optional here by design — a
+declined grant must cost that one feature and nothing else, never the mesh. So
+`enterForeground()` builds the type mask from what is actually granted: `connectedDevice`
+always, `microphone` and `location` only when held. Below 14 the two-argument call keeps
+using the manifest union, which is safe there because no permission is enforced at promotion
+time.
+
+`onStartCommand` now re-promotes before starting the bridges. It was already the retry point
+for a permission granted after the service came up, but restarting the bridge alone was not
+enough: on 14+ the type mask is what gates delivery, and the mask was fixed at `onCreate`
+when the permission was still missing. Re-calling `startForeground` is the documented way to
+widen it.
+
+### Two smaller reasons a fix could still not arrive
+
+- `GpsBridge.start()` returned early when the GPS provider was switched off, leaving
+  `running` false with nothing to set it true again — the only retry path fires on a
+  permission grant, not on someone enabling Location in Settings. It now registers
+  regardless; a registration against a disabled provider is legal and begins delivering when
+  the provider comes up.
+- Nothing seeded from `getLastKnownLocation`, so the earliest possible coordinate was one
+  full GPS time-to-first-fix after the service started — tens of seconds cold, longer
+  indoors, reliably later than the SOS. `seedFromLastKnownFix()` now takes the platform's
+  existing fix if it is under `MAX_SEED_AGE_MS` (two minutes) old. This does not weaken the
+  "never a fallback or an estimate" rule: it is `GPS_PROVIDER` only, so it is a real
+  satellite fix, and the age bound is what keeps it a claim about where the phone *is*
+  rather than where it was.
+
+### What did not change
+
+The honesty contract. `raiseSos` is still synchronous and still never waits on GPS, the
+field is still nullable, the zone tag and `minHops` are still the proxy for anyone without a
+fix, and there is still no network-location fallback anywhere.
+
+
+## The LoRa budget never closed, and the framing corrupted node identity (2026-08-30)
+
+Measured rather than reasoned about. `LoRaBudgetTest` searches the schema for the largest
+envelope it can express: **exactly 233 bytes** — zone=1, four 17-byte views, seven peers, a
+50-byte summary and a full `v_SLM`. `Envelope` validated against `LORA_MAX_FRAME` (233) and
+permitted it. `LoRaBridgeTransport` advertised `233 - 8` for its own header and then did
+`require(frame.size <= maxFrameBytes)` in `send()`. Every envelope between 226 and 233 bytes
+therefore threw — not at construction, but on the radio hop, after the sensory window had
+been spent and the report built. One byte of slack in the whole design, and nothing said so.
+
+`CompactCodec` now states the reservation (`LORA_LINK_HEADER_RESERVE`) and the figure that
+follows from it (`LORA_USABLE_FRAME` = 223). `Envelope` validates against the usable figure,
+so an envelope that exists is one the radio can carry. **The 233 in earlier entries is the
+on-air frame; the application ceiling is now 223.**
+
+### Node identity was truncated by every LoRa hop
+
+`NodeId` is 48-bit. The framing carried a 32-bit Meshtastic node number, truncating on the
+way out and rebuilding a *different* id on the way in, so peer tables, trust scores and
+corroboration counts attached to a node that does not exist. The header is ours and lives
+inside the payload, so it now carries all 48 bits. It goes back to 32 when the native
+Meshtastic header is linked and `from` moves outside the payload — the entry above still
+describes that end state correctly.
+
+### Nothing checked integrity on that path
+
+LoRa's CRC covers the air hop and BLE's covers a notification; neither covers the reassembly
+*between* them, where a dropped or duplicated chunk yields bytes both layers consider valid.
+`CompactCodec` has no checksum, so a frame reassembled one byte out of step decodes into a
+structurally valid envelope carrying a severity nobody reported — and `Gossip.ingest` cannot
+catch that, because it only rejects frames that fail to decode. One CRC-8 byte turns a silent
+corruption into a dropped frame, which is the failure a mesh is built to tolerate.
+
+### Two reassembler faults, one found only by writing the test
+
+It recursed once per discarded byte, so a run of noise on the serial line — the ordinary
+condition it exists for — ended in `StackOverflowError`; and it copied the whole pending
+buffer to a `List` on every attempt to read eight header bytes, making reassembly quadratic
+in the backlog. Both are now a bounded loop over indexed access.
+
+The sync word is two bytes. A one-byte word false-matches every 256th byte of noise, and a
+false match carries a false *length*: the reader then parks waiting for a payload that never
+comes while a real frame sits behind it in the buffer. A stuck serial line stalls the channel
+indefinitely. The one-byte version was written first and its own test caught this.
+
+## Bit 7 stopped being reserved (2026-08-30)
+
+`AUDIO_STRUCTURAL` is the third-heaviest channel in the projection (0.15, above voice), so a
+structural crack has always moved the danger score — and it had no bit in the flag byte, so
+`SensoryFlags.describe` never named it and it reached the perimeter as an unexplained number.
+The full `v_SLM` carries it, but the vector is optional and rides only on the Stage 3 enriched
+broadcast; on a LoRa hop that drops it, a collapse signature was invisible. Bit 7 was reserved
+and is now that channel. It costs nothing on the wire and is forward-compatible: a receiver
+built before this ignores bit 7 exactly as it did when the bit was reserved.
+
+**Any earlier entry, fixture or document listing bit 7 as `reserved` is stale.**
+`CorpusAccuracyTest` now fails if the retrieval corpus drifts from `SensoryFlags.BIT_NAMES`
+again — the advisor cites its sources, so a stale sentence tells a responder something wrong
+*and* hands them a reason to believe it.
+
+## A zone entered after the SOS never reached the board (2026-08-30)
+
+Nobody types a zone tag before pressing SOS, so the first envelope carries `UNSET_ZONE`.
+Stage 3's enrichment reuses the dedup key by design, so it lands as an *update* — and `zone`
+was the one field missing from `DedupCluster`'s merge copy. Whatever the first envelope
+carried was frozen for the life of the incident, which is exactly why every real two-phone
+run showed `unset`. It now follows the rule `slmSummary` and the GPS fix already use: an
+informative value wins, an uninformative one never blanks what is held. `Envelope.UNSET_ZONE`
+and `isZoneKnown()` are the single definition; the app service, the headless gateway and
+`BoardView` each had their own `"unset"` literal, which is how this stayed invisible across
+module lines.
+
+## An honest relay lost standing for carrying a severity upgrade (2026-08-30)
+
+Measured: 0.5 → 0.325 for a relay that did nothing wrong. A victim presses SOS at `OTHER`,
+then again at `DROWNING_IMMINENT`; the relay carries the upgrade and the judging rule read any
+severity difference as conflicting telemetry. Trust builds about seven times slower than it
+decays and feeds `ResponderRanking`'s corroboration weighting, so the penalty demoted the
+relay *and* the ranking of the incident it had just carried.
+
+Severity is monotonic here, so the three cases are now distinguished: agreement reinforces;
+an escalation is neither rewarded nor punished (not punished because the relay told the truth,
+not rewarded or a peer could farm standing by escalating everything); a report *less* urgent
+than what is held is still penalised, because that is the spoofed-node case the asymmetric
+decay exists for.
+
+A first draft dropped that last penalty too, on the grounds that `StoreAndForward`'s replay
+can deliver a genuinely old lower-severity frame from an honest relay. Two existing tests
+caught it. The limitation is real but cannot be resolved at this layer — the envelope's
+timestamp is the incident's, not the report's, because the dedup key reuses it — so it is
+documented in `severityAgreement()` rather than guessed at.
+
+## The board did not survive a process restart (2026-08-30)
+
+`GatewayController.start` was only ever reachable from `ResponderScreen`'s button. When
+Android reclaimed the process — a locked screen and some memory pressure is enough — the
+service came back on `START_STICKY`, restored the GATEWAY role from `RoleStore`, kept
+relaying, and served nothing. The phone still read "responder"; the laptop dashboard simply
+went dead, with no indication on either.
+
+`ResponderScreen`'s own doc already stated the intent — the server is deliberately not stopped
+when the screen leaves composition, because "a responder whose board dies because they put
+their phone in a pocket has lost the incident view mid-rescue." A process death is that same
+pocket, one step further. `GatewayStore` persists the responder's intent exactly as
+`RoleStore` persists the role, and `applyRole` restores the board with it.
+
+The mirror of it: `NodeViewModel` seeds its role from `MeshStack`, which is right once the
+service has installed the stack — but the Activity composes first, and an uninstalled stack
+reports `NODE`. A responder's phone opened on the victim screen, SEND SOS button and all,
+while its service was about to restore GATEWAY. Before the stack exists, the persisted role is
+the honest answer.
+
+Both verified on the Samsung S25 (SM_S931B): cold start opens on the responder screen, and
+after a force-stop the board serves again with nobody touching the phone.

@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -14,6 +15,7 @@ import android.os.PowerManager
 import android.util.Log
 import org.groundzero.mesh.agent.NodeAgent
 import org.groundzero.mesh.app.NodeIdStore
+import org.groundzero.mesh.app.gateway.GatewayController
 import org.groundzero.mesh.app.mesh.MeshStack
 import org.groundzero.mesh.app.transport.GossipOriginTransport
 import org.groundzero.mesh.app.transport.LanRelayTransport
@@ -21,13 +23,16 @@ import org.groundzero.mesh.app.transport.NearbyTransport
 import org.groundzero.mesh.app.transport.RadioTransport
 import org.groundzero.mesh.app.node.MeshRole
 import org.groundzero.mesh.app.node.RelayHostStore
+import org.groundzero.mesh.app.node.GatewayStore
 import org.groundzero.mesh.app.node.RoleStore
 import org.groundzero.mesh.app.node.SelfPositionStore
 import org.groundzero.mesh.app.node.SitePlanLoader
+import org.groundzero.mesh.app.permissions.MeshPermissions
 import org.groundzero.mesh.app.sensors.AudioBridge
 import org.groundzero.mesh.app.sensors.GpsBridge
 import org.groundzero.mesh.app.sensors.SensorBridge
 import org.groundzero.mesh.app.transport.StoreAndForward
+import org.groundzero.mesh.propagation.Envelope
 import org.groundzero.mesh.propagation.Gossip
 import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.transport.TcpTransport
@@ -36,9 +41,9 @@ import org.groundzero.mesh.transport.TcpTransport
  * Keeps the mesh alive with the screen off.
  *
  * A phone that stops advertising/scanning when it sleeps is invisible to the mesh. This
- * service runs foreground (type `connectedDevice|microphone` — the microphone half is what
- * lets [AudioBridge] keep recording with the app in the background) and holds a partial wake
- * lock so the radios keep working. On OEM-throttled devices, also keep the app in the foreground
+ * service runs foreground (see [enterForeground] — the `microphone` and `location` types are
+ * what let [AudioBridge] and [GpsBridge] keep delivering with the app in the background) and
+ * holds a partial wake lock so the radios keep working. On OEM-throttled devices, also keep the app in the foreground
  * during a demo — the wake lock is necessary, not always sufficient.
  *
  * It also owns the mesh stack: the transport, [Gossip], and the [NodeAgent] wired together
@@ -85,7 +90,7 @@ class MeshForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        startForeground(NOTIF_ID, buildNotification())
+        enterForeground()
 
         wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG)
@@ -105,7 +110,11 @@ class MeshForegroundService : Service() {
         val agent = NodeAgent(
             nodeId = localId,
             saltFingerprint = NodeIdStore.saltFingerprint(localId),
-            addressZone = markedZone ?: UNSET_ZONE,
+            // Answers main's TODO here: the zone is the one the person marked on the site
+            // plan, and nothing else. A mark is a claim, so it travels as SELF_REPORTED and
+            // never as a fix; absent a mark this stays UNSET_ZONE rather than guessing,
+            // because a zone nobody chose reads on the dashboard as a located casualty.
+            addressZone = markedZone ?: Envelope.UNSET_ZONE,
             transport = GossipOriginTransport(radio, gossip) { envelope, frame ->
                 storeAndForward.offer(envelope.addressZone, envelope.dedupKey, frame)
             },
@@ -205,6 +214,17 @@ class MeshForegroundService : Service() {
             // originate a report, so nothing downstream could ever read what it heard.
             audio?.stop()
         }
+        // The board is part of the gateway role, not just of a screen someone is looking at.
+        // GatewayController.start used to be reachable only from ResponderScreen's button, so
+        // a reclaimed process came back relaying but serving nothing while the phone still
+        // read "responder" — see GatewayStore.
+        if (role == MeshRole.GATEWAY && GatewayStore.isServing(this)) {
+            GatewayController.start(this, clusterSource = MeshStack::rankedBoard)
+        } else if (role != MeshRole.GATEWAY) {
+            // Intent is deliberately not cleared: returning to the role resumes serving
+            // rather than making the responder ask for the board twice.
+            GatewayController.stop()
+        }
         RoleStore.set(this, role)
         Log.i(TAG, "role is now $role")
     }
@@ -219,6 +239,14 @@ class MeshForegroundService : Service() {
      * again and gets another shot at it. Cheap: [GpsBridge.start] no-ops if already running.
      */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Re-promote *before* starting the bridges. A grant that arrived after onCreate
+        // widens the type mask, and on 14+ the mask — not the permission on its own — is what
+        // decides whether location and audio keep being delivered once the app is no longer
+        // in front. Starting the bridge without widening the mask first is exactly the
+        // failure this method is supposed to repair. Re-calling startForeground on an already
+        // foreground service is the documented way to change its type; it is otherwise a
+        // no-op that refreshes the same notification.
+        enterForeground()
         if (MeshStack.currentRole() == MeshRole.NODE) {
             gps?.start()
             // Same retry path, same reason: the victim screen can grant the microphone after
@@ -226,6 +254,35 @@ class MeshForegroundService : Service() {
             audio?.start()
         }
         return START_STICKY
+    }
+
+    /**
+     * Go foreground with the types this device has actually granted.
+     *
+     * `connectedDevice` is unconditional — it is the mesh itself, and without it there is no
+     * reason for this service to exist. `microphone` and `location` are added only when their
+     * runtime permission is held, because on 14+ promoting with a type whose permission is
+     * missing throws `SecurityException` and takes the whole service down with it. Both are
+     * optional features by design (see [MeshPermissions.LOCATION_PERMISSION]), so a declined
+     * grant must cost exactly that feature and nothing else.
+     *
+     * Below 14 the two-argument call applies the manifest's declared types and enforces no
+     * permission at promotion time, so the union there is both correct and safe.
+     */
+    private fun enterForeground() {
+        val notification = buildNotification()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIF_ID, notification)
+            return
+        }
+        var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        if (MeshPermissions.microphoneGranted(this)) {
+            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        }
+        if (MeshPermissions.locationGranted(this)) {
+            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        }
+        startForeground(NOTIF_ID, notification, types)
     }
 
     override fun onDestroy() {
@@ -278,9 +335,6 @@ class MeshForegroundService : Service() {
         private const val NOTIF_ID = 1
         private const val WAKE_LOCK_TAG = "groundzero:mesh"
         private const val MAINTENANCE_INTERVAL_MS = 30_000L
-
-        /** No zone until a responder can enter one. See the `addressZone` TODO in onCreate. */
-        const val UNSET_ZONE = "unset"
 
         fun start(context: Context) {
             val intent = Intent(context, MeshForegroundService::class.java)

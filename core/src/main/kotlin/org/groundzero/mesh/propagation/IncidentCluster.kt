@@ -126,6 +126,16 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
                 } else {
                     existing.severity
                 },
+                // A zone entered after the first broadcast used to be dropped on the floor:
+                // `zone` was simply absent from this copy, so whatever the very first
+                // envelope carried — almost always Envelope.UNSET_ZONE, since nobody types a
+                // zone before pressing SOS — was frozen for the life of the incident. The
+                // Stage 3 enrichment reuses the same dedup key by design, so it lands here as
+                // an update, and its zone was the one field the update could not change.
+                //
+                // Same rule the summary and the GPS fix already use: an informative value
+                // wins, and an uninformative one never blanks what is already held.
+                zone = if (Envelope.isZoneKnown(envelope.addressZone)) envelope.addressZone else existing.zone,
                 dangerScore = maxOf(existing.dangerScore, envelope.dangerScore),
                 tier = strongest(existing.tier, envelope.effectiveTier),
                 corroborators = existing.corroborators + setOfNotNull(from),
@@ -145,18 +155,63 @@ class DedupCluster(private val trust: TrustConsensus = TrustConsensus()) {
 
         if (existing != null && from != null && from != envelope.nodeId) {
             // Grounds to judge: this peer relayed a claim about an incident we already hold,
-            // so its report can be checked against one. Agreement on severity is
-            // corroboration; disagreement is conflicting telemetry, and the asymmetric decay
-            // means the second costs about seven times what the first earns.
+            // so its report can be checked against one.
             //
             // The origin is never judged for its own report. Severity is the victim's own
             // statement of how fast they die, and penalising the person in trouble for
             // restating it would be exactly backwards.
-            judge(from, corroborated = envelope.severity == existing.severity)
+            when (severityAgreement(envelope.severity, existing.severity)) {
+                Agreement.SAME -> trust.reinforce(from)
+                // Carrying an upgrade is the designed path, not a contradiction. Neither
+                // rewarded nor punished: a relay should not be able to farm standing by
+                // escalating, and it must not lose standing for relaying the truth.
+                Agreement.ESCALATION -> Unit
+                Agreement.CONTRADICTION -> trust.penalise(from)
+            }
         }
 
         clusters[key] = merged
         return merged
+    }
+
+    /**
+     * How a relayed severity compares with the one already held.
+     *
+     * This exists because "the severities differ, so the peer is lying" is wrong twice over,
+     * and both mistakes punish the relays a rescue depends on. Trust decays about seven times
+     * faster than it builds, so a wrong penalty is expensive and slow to undo — and it feeds
+     * `ResponderRanking`'s corroboration weighting, which means an unjustly demoted relay
+     * drags down the ranking of the very incident it carried.
+     */
+    private enum class Agreement { SAME, ESCALATION, CONTRADICTION }
+
+    /**
+     * An **escalation** is the system working as designed, not a contradiction.
+     *
+     * Severity is monotonic here: the merge above takes the most urgent ever reported and
+     * never walks it back, and Stage 3's enriched re-broadcast reuses the incident's dedup
+     * key, so a victim upgrading from OTHER to DROWNING_IMMINENT arrives as an update to the
+     * same incident. A relay carrying that upgrade did its job perfectly — and the previous
+     * rule, which read any difference as a contradiction, docked it from 0.5 to 0.325 for
+     * doing so. That is expensive: trust builds about seven times slower than it decays, and
+     * it feeds `ResponderRanking`'s corroboration weighting, so the penalty demoted both the
+     * relay and the ranking of the incident it had just carried.
+     *
+     * A **contradiction** — a report *less* urgent than what is held — is still penalised.
+     * That is the spoofed-node case: a peer downplaying an emergency another peer reported,
+     * which is exactly what the asymmetric decay exists to punish.
+     *
+     * Known limitation, deliberately left alone: `StoreAndForward` replays buffered frames on
+     * reconnection, so an honest relay that survived a partition can deliver a genuinely old,
+     * lower-severity frame and be penalised for it. Distinguishing that from a spoof needs
+     * something this layer does not have — the envelope's timestamp is the *incident's*, not
+     * the report's, because the dedup key reuses it by design. Weakening the spoof defence
+     * on a maybe is the worse trade, so it is recorded rather than guessed at.
+     */
+    private fun severityAgreement(incoming: Severity, held: Severity): Agreement = when {
+        incoming == held -> Agreement.SAME
+        incoming.rank < held.rank -> Agreement.ESCALATION
+        else -> Agreement.CONTRADICTION
     }
 
     /**

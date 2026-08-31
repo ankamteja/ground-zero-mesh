@@ -37,7 +37,7 @@ linear projection whose contributing feature can always be named.
 - **Kotlin + Jetpack Compose, one Android app**, three runtime-selectable roles: Node / Relay / Gateway. The switch gates origination and sensing, not relaying — every role keeps carrying other people's reports.
 - **Android only.** Nearby Connections (Android) and Multipeer Connectivity (iOS) do not interoperate — scoped out on purpose.
 - **Google Nearby Connections, `P2P_CLUSTER`.** BLE discovery that auto-upgrades the data channel to Wi-Fi Direct / local WLAN.
-- **AI is advisory only, structurally.** The L1 classifier and the L3 `RadminLlmSummarizer` both sit behind seams that take a decision already made and can only describe it — neither has a return path to gate, delay or reorder anything.
+- **AI is advisory only, structurally.** The L1 classifier and the L3 advisor (`RadminLlmSummarizer` deterministic, or a real local model with retrieval via `core/llm` + `core/advisor`) both sit behind seams that take a decision already made and can only describe it — neither has a return path to gate, delay or reorder anything. See `docs/RUNNING.md` §3 for the advisor.
 - **Trust decays far faster than it builds.** +0.05 gain, −0.35 loss — a corroborated relay earns influence slowly; one report that contradicts first-hand observation costs it about seven relays' worth of standing.
 - **Localisation is not solved, and nothing pretends otherwise.** The Digital Twin places incidents from the zone tag alone; an incident whose zone names no floor renders as explicitly unplaced rather than being drawn on the ground floor.
 - **LoRa is in scope.** Hence the hard byte budget on the wire.
@@ -52,6 +52,8 @@ core/   pure JVM — no Android, no third-party runtime dependency.
         agent/       NodeAgent (4-stage cascade), MathEngine, DangerScore, SensoryClassifier
         propagation/ Envelope, Gossip, TrustConsensus, DedupCluster/IncidentCluster, codecs
         gateway/     ResponderRanking, DigitalTwin, RadminLlmSummarizer
+        llm/         OllamaClient, KnowledgeBase, Retriever, LlmAdvisor — the real advisor
+        advisor/     AdvisorServer/AdvisorMain — the laptop-side HTTP service the dashboard queries
         simulation/  SimulationRunner — the whole stack over a simulated mesh, no device needed
 app/    the Android app.
         transport/   NearbyTransport, LoRaBridgeTransport, GossipOriginTransport, StoreAndForward
@@ -72,6 +74,11 @@ docs/   docs/architecture.md — the ported-formula ledger.
 ```
 
 Requires JDK 21. The `app/` module additionally needs the Android SDK.
+
+**Every way to run this system** — the simulation, the interactive emulation, the AI
+advisor, one phone, two phones, a laptop relay, a multi-hop chain — is in
+[`docs/RUNNING.md`](docs/RUNNING.md). The sections below stay as the narrative walkthrough
+for the two live demos; RUNNING.md has the exact commands and troubleshooting.
 
 ## The three-phone demo
 
@@ -133,12 +140,12 @@ is and is not verified.
 
 ## What's real vs. simulated right now
 
-Every layer above is implemented and unit-tested (`core` alone is 150+ tests). What has
-**not** been run is the actual three-phone field test: no Android hardware is attached to
-the development machine, and Nearby Connections cannot run between emulators (no real BT /
-Wi-Fi Direct radios). `MeshFieldSimulationTest` stands in for it over a simulated network and
-proves the mesh logic; it proves nothing about Nearby's discovery or permission behaviour,
-which is where a live demo is most likely to fail silently. See `TODO.md` for the exact gap.
+Every layer above is implemented and unit-tested (`core` alone is 304 tests, 378 across both
+modules). Verified on a single real phone (Samsung S25): the mesh service, the responder
+board — including opening on the phone that serves it — and a real incident ranked and
+answered by the AI advisor. **Not yet run** is the actual multi-device field test: two phones
+over Nearby with a real relay hop, or the laptop relay over a real network. See `TODO.md` for
+the exact gap.
 
 ## Contributing
 
