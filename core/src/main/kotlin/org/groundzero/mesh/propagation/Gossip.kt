@@ -107,6 +107,13 @@ class Gossip(
      * Same incident with new evidence travels once more; a byte-identical repeat, however
      * many paths deliver it, does not. [hops] and [ttl] are excluded, because they change
      * on every forward and including them would defeat suppression entirely.
+     *
+     * Where someone is counts as content that can change. Nobody marks their position before
+     * pressing the button, so the correction always arrives as a second envelope carrying the
+     * same severity, the same score and the same views as the first — identical on every
+     * field this key used to cover. It died at the first relay, one hop from the victim, and
+     * the board went on showing the location the SOS happened to leave with. That is the
+     * failure this whole board exists to prevent, so the position is part of the key.
      */
     private fun Envelope.propagationKey(): String = buildString {
         append(dedupKey)
@@ -114,6 +121,9 @@ class Gossip(
         append(':').append(Math.round(dangerScore * 1000))
         append(':').append(slmSummary ?: "")
         append(':').append(views.joinToString(","))
+        append(':').append(addressZone)
+        append(':').append(gpsLat ?: "").append(',').append(gpsLon ?: "")
+        append(':').append(gpsSource?.ordinal ?: -1)
     }
 
     /** False if already present. Evicts oldest keys past [maxSeen] so memory stays bounded. */

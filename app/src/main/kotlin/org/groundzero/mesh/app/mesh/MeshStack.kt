@@ -209,6 +209,11 @@ object MeshStack {
     fun updateSelfReportedPosition(lat: Float?, lon: Float?, zone: String?) = synchronized(lock) {
         agent?.updateSelfReportedFix(lat, lon)
         zone?.let { agent?.updateAddressZone(it) }
+        // Push the correction out now rather than waiting for something else to broadcast.
+        // Nobody marks themselves before pressing SOS, so without this the board keeps
+        // whatever the first envelope carried and the correction never leaves the phone.
+        // No-op when no incident is active.
+        agent?.republishPosition()
         Unit
     }
 

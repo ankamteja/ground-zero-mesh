@@ -347,6 +347,38 @@ class NodeAgent(
         )
     }
 
+    /**
+     * Re-broadcast the active incident because the person corrected where they are.
+     *
+     * Without this, marking a position is only heard if it happened before the SOS. Someone
+     * who presses the button first — which is the order anyone in trouble uses — and then
+     * answers "where are you" changes nothing a responder can see: the board keeps the zone
+     * and coordinate the first envelope happened to carry, and the correction lives on the
+     * victim's screen only. A search then goes to the wrong building while the phone that
+     * knows better is sitting there saying so.
+     *
+     * Reuses [Incident.atSeconds] so the dedup key is unchanged and this merges into the
+     * existing incident rather than opening a second one for the same person — the same
+     * mechanism the enriched broadcast in [completeSensoryWindow] relies on.
+     *
+     * Deliberately carries no `slmSummary` or feature vector: those are stage 3's to send,
+     * and the merge rule keeps whatever is already held rather than letting an uninformative
+     * field blank an informative one. Null when nothing is active, since a correction is only
+     * meaningful against an incident someone is already looking at.
+     */
+    fun republishPosition(): Envelope? {
+        val incident = activeIncident ?: return null
+        return emit(
+            buildEnvelope(
+                tier = EpistemologyTier.PRATYAKSA,
+                severity = incident.severity,
+                score = OVERRIDE_SCORE,
+                timestampSeconds = incident.atSeconds,
+                views = listOf("OVERRIDE_ACTIVE"),
+            ),
+        )
+    }
+
     /** Clear the incident once a responder has it, or the user cancels. */
     fun clearIncident() {
         activeIncident = null

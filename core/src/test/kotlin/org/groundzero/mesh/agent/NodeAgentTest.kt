@@ -2,6 +2,7 @@ package org.groundzero.mesh.agent
 
 import org.groundzero.mesh.propagation.Codecs
 import org.groundzero.mesh.propagation.EpistemologyTier
+import org.groundzero.mesh.propagation.FixSource
 import org.groundzero.mesh.propagation.NodeId
 import org.groundzero.mesh.propagation.Severity
 import org.groundzero.mesh.transport.SimNetwork
@@ -371,5 +372,36 @@ class NodeAgentTest {
         )
         assertNotNull(enriched)
         assertTrue(org.groundzero.mesh.propagation.CompactCodec.fits(enriched))
+    }
+
+    // ------------------------------------------------- correcting a mark after the SOS
+
+    @Test
+    fun `a mark made after the sos reaches the board as an update, not a second incident`() {
+        val (node, _) = agent()
+        val sos = node.raiseSos(Severity.DROWNING_IMMINENT, atSeconds = 1_724_900_000L)
+        assertNull(sos.gpsLat, "nobody marks themselves before pressing the button")
+
+        // The order anyone in trouble actually uses: press first, answer "where are you" after.
+        node.updateSelfReportedFix(9.0932f, 76.4903f)
+        node.updateAddressZone("block-a-north")
+        val update = assertNotNull(node.republishPosition())
+
+        assertEquals("block-a-north", update.addressZone)
+        assertEquals(FixSource.SELF_REPORTED, update.gpsSource, "a tap is a claim, never a fix")
+        assertEquals(
+            sos.timestamp,
+            update.timestamp,
+            "same dedup key, so this merges into the incident instead of opening a second one",
+        )
+    }
+
+    @Test
+    fun `a correction with no incident open broadcasts nothing`() {
+        val (node, _) = agent()
+
+        node.updateSelfReportedFix(9.0932f, 76.4903f)
+
+        assertNull(node.republishPosition(), "a correction is only meaningful against an incident")
     }
 }
