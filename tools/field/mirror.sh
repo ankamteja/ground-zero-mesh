@@ -8,6 +8,7 @@
 # default that makes two phones fit on a 16 GB laptop.
 #
 #   ./mirror.sh                     every booted emulator, tiled
+#   ./mirror.sh --all               every attached device, the physical phone too
 #   ./mirror.sh emulator-5554       one of them
 #   ./mirror.sh RZCY219DWVM         a real phone, if it is not mirrored already
 #
@@ -40,15 +41,34 @@ fi
 # -gpu host already needs one; scrcpy needs one for the same reason.
 export DISPLAY="${DISPLAY:-:0}"
 
-targets=("$@")
-if [[ ${#targets[@]} -eq 0 ]]; then
-    # Emulators only by default: the real phone is usually already mirrored by
-    # its own tooling, and a second window fighting for the same device is not
-    # something to do by accident.
-    mapfile -t targets < <("$adb" devices | awk '$2 == "device" && $1 ~ /^emulator-/ {print $1}')
+all=0
+if [[ "${1-}" == "--all" ]]; then
+    all=1
+    shift
 fi
 
-[[ ${#targets[@]} -gt 0 ]] || { echo "mirror: no emulator is running - ./field.sh up 2" >&2; exit 1; }
+targets=("$@")
+if [[ ${#targets[@]} -eq 0 ]]; then
+    if [[ "$all" == 1 ]]; then
+        # Every attached device, physical phone included: what you want when the
+        # demo is the whole mesh on one screen rather than the emulators alone.
+        mapfile -t targets < <("$adb" devices | awk '$2 == "device" {print $1}')
+    else
+        # Emulators only by default: the real phone is usually already mirrored by
+        # its own tooling, and a second window fighting for the same device is not
+        # something to do by accident.
+        mapfile -t targets < <("$adb" devices | awk '$2 == "device" && $1 ~ /^emulator-/ {print $1}')
+    fi
+fi
+
+[[ ${#targets[@]} -gt 0 ]] || {
+    if [[ "$all" == 1 ]]; then
+        echo "mirror: no device is attached" >&2
+    else
+        echo "mirror: no emulator is running - ./field.sh up 2, or --all to include the phone" >&2
+    fi
+    exit 1
+}
 
 x=40
 for serial in "${targets[@]}"; do
