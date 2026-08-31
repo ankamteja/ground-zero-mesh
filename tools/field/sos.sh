@@ -75,9 +75,18 @@ tap_label "$what"
 tap_label "SEND SOS"
 
 sleep 4
-if "$adb" -s "$serial" logcat -d 2>/dev/null | grep -q "FATAL EXCEPTION"; then
+# Only this app's crash counts. `uiautomator dump` -- which every tap above relies on --
+# raises its own FATAL EXCEPTION ("UiAutomationService ... already registered!") when a
+# previous dump left its automation service behind, and an unscoped grep reports that as
+# the app dying after a SEND SOS that in fact went out fine.
+crash="$here/.run/crash-$serial.txt"
+# `|| true` because the happy path is grep finding nothing, and `set -e` would take a
+# clean run as a failure -- which it did: the SOS went out, then the script died here
+# instead of reporting it.
+"$adb" -s "$serial" logcat -d 2>/dev/null | grep -A20 "FATAL EXCEPTION" > "$crash" 2>/dev/null || true
+if grep -q "$pkg" "$crash" 2>/dev/null; then
     echo "sos: the app crashed after SEND SOS -- last stack:" >&2
-    "$adb" -s "$serial" logcat -d 2>/dev/null | grep -A12 "FATAL EXCEPTION" | tail -14 >&2
+    tail -14 "$crash" >&2
     exit 1
 fi
 echo "sos: sent from $serial ($what), no crash"
